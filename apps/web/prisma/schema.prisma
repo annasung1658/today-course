@@ -1,0 +1,651 @@
+// 오늘코스 데이터 모델
+// 모든 시각은 UTC로 저장하고 API에서 ISO 8601로 직렬화한다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── 열거형 ──────────────────────────────────────────────────────────
+
+enum AuthProvider {
+  EMAIL
+  KAKAO
+}
+
+enum MeetingStatus {
+  DRAFT
+  INVITING
+  COLLECTING_RESPONSES
+  GENERATING
+  VOTING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  GENERATION_FAILED
+}
+
+enum ParticipantRole {
+  HOST
+  MEMBER
+}
+
+enum ParticipantStatus {
+  INVITED
+  JOINED
+  INTERVIEW_IN_PROGRESS
+  INTERVIEW_COMPLETED
+  NO_RESPONSE
+  DECLINED
+}
+
+enum InvitationStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum InterviewStatus {
+  IN_PROGRESS
+  READY_TO_SUBMIT
+  SUBMITTED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum CourseStatus {
+  VOTING
+  CONFIRMED
+  CANCELLED
+}
+
+enum CourseItemCategory {
+  CAFE
+  LUNCH
+  DINNER
+  WALK
+  EXHIBITION
+  ACTIVITY
+  SHOPPING
+  BAR
+}
+
+enum CourseItemStatus {
+  ACTIVE
+  REGENERATION_QUEUED
+  REGENERATING
+  REPLACED
+  LOCKED
+}
+
+enum VoteValue {
+  LIKE
+  DISLIKE
+}
+
+enum AiJobType {
+  COURSE_GENERATION
+  ITEM_REGENERATION
+  CLOSE_RESPONSES
+  FINALIZE_COURSE
+  SEND_REMINDER
+}
+
+enum AiJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum FeedbackRating {
+  VERY_GOOD
+  GOOD
+  NEUTRAL
+  BAD
+  VERY_BAD
+}
+
+enum FeedbackStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum NotificationType {
+  MEETING_INVITED
+  INTERVIEW_REMINDER
+  RESPONSE_CLOSED
+  COURSE_GENERATED
+  VOTING_STARTED
+  VOTING_ENDING_SOON
+  ITEM_REGENERATED
+  COURSE_CONFIRMED
+  RECORD_ADDED
+  COMMENT_ADDED
+  FEEDBACK_REQUESTED
+}
+
+// ── 계정 ────────────────────────────────────────────────────────────
+
+model User {
+  id              String       @id @default(cuid())
+  email           String       @unique
+  passwordHash    String?
+  nickname        String
+  profileImageUrl String?
+  authProvider    AuthProvider @default(EMAIL)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  accounts             Account[]
+  sessions             Session[]
+  preference           UserPreference?
+  notificationSetting  NotificationSetting?
+  hostedMeetings       Meeting[]            @relation("MeetingHost")
+  participations       Participant[]
+  interviews           AiInterview[]
+  votes                CourseVote[]
+  recordPhotos         RecordPhoto[]
+  recordPosts          RecordPost[]
+  recordComments       RecordComment[]
+  feedbacks            Feedback[]
+  notifications        Notification[]
+  sentInvitations      Invitation[]         @relation("InvitationCreator")
+
+  @@index([deletedAt])
+}
+
+model Account {
+  id                String       @id @default(cuid())
+  userId            String
+  provider          AuthProvider
+  providerAccountId String
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
+  createdAt         DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model UserPreference {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  preferredFoods       String[]
+  dislikedFoods        String[]
+  // 알레르기는 안전조건이므로 단순 비선호와 분리해 저장한다.
+  allergies            String[]
+  preferredActivities  String[]
+  preferredAtmospheres String[]
+  budgetMin            Int?
+  budgetMax            Int?
+  budgetCurrency       String   @default("KRW")
+  mustHave             String[]
+  mustAvoid            String[]
+  additionalNotes      String?
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationSetting {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  invitationEnabled  Boolean  @default(true)
+  reminderEnabled    Boolean  @default(true)
+  votingEnabled      Boolean  @default(true)
+  recordEnabled      Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── 약속 ────────────────────────────────────────────────────────────
+
+model Meeting {
+  id                      String        @id @default(cuid())
+  hostUserId              String
+  title                   String
+  scheduledStartAt        DateTime
+  scheduledEndAt          DateTime
+  areaName                String
+  areaAddress             String?
+  areaLatitude            Float?
+  areaLongitude           Float?
+  capacity                Int
+  relationshipTags        String[]
+  relationshipDescription String?
+  atmosphereTags          String[]
+  atmosphereDescription   String?
+  specialNotes            String?
+  responseDeadlineAt      DateTime
+  responsesClosedAt       DateTime?
+  status                  MeetingStatus @default(INVITING)
+  cancelledAt             DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  host           User            @relation("MeetingHost", fields: [hostUserId], references: [id])
+  fixedSchedules FixedSchedule[]
+  participants   Participant[]
+  invitations    Invitation[]
+  interviews     AiInterview[]
+  courses        Course[]
+  rejectedPlaces RejectedPlace[]
+  record         MeetingRecord?
+  feedbacks      Feedback[]
+  aiJobs         AiJob[]
+
+  @@index([hostUserId])
+  @@index([status])
+  @@index([status, responseDeadlineAt])
+  @@index([scheduledStartAt])
+}
+
+model FixedSchedule {
+  id        String   @id @default(cuid())
+  meetingId String
+  title     String
+  startAt   DateTime
+  endAt     DateTime
+  placeName String
+  address   String?
+  placeId   String?
+  latitude  Float?
+  longitude Float?
+  // AI는 이 일정을 삭제하거나 시간·장소를 바꿀 수 없다.
+  locked    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  meeting     Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  courseItems CourseItem[]
+
+  @@index([meetingId])
+}
+
+model Participant {
+  id        String            @id @default(cuid())
+  meetingId String
+  userId    String
+  role      ParticipantRole   @default(MEMBER)
+  status    ParticipantStatus @default(JOINED)
+  joinedAt  DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId, status])
+  @@index([userId])
+}
+
+model Invitation {
+  id              String           @id @default(cuid())
+  meetingId       String
+  createdByUserId String
+  inviteCode      String           @unique
+  status          InvitationStatus @default(ACTIVE)
+  expiresAt       DateTime
+  createdAt       DateTime         @default(now())
+
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("InvitationCreator", fields: [createdByUserId], references: [id])
+
+  @@index([meetingId, status])
+  @@index([expiresAt])
+}
+
+// ── AI 인터뷰 ───────────────────────────────────────────────────────
+
+model AiInterview {
+  id                      String          @id @default(cuid())
+  meetingId               String
+  userId                  String
+  status                  InterviewStatus @default(IN_PROGRESS)
+  currentQuestion         Int             @default(1)
+  targetQuestionCount     Int             @default(4)
+  turnCount               Int             @default(0)
+  defaultPreferencesLoaded Boolean        @default(false)
+  submittedAt             DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  meeting  Meeting               @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages InterviewMessage[]
+  extracted ExtractedPreference?
+
+  // 참여자당 약속별 인터뷰는 하나다.
+  @@unique([meetingId, userId])
+  @@index([meetingId, status])
+}
+
+// 인터뷰 원문은 본인만 조회할 수 있다. 방장에게도 노출하지 않는다.
+model InterviewMessage {
+  id          String      @id @default(cuid())
+  interviewId String
+  role        MessageRole
+  content     String
+  turn        Int
+  createdAt   DateTime    @default(now())
+
+  interview AiInterview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId, turn])
+}
+
+model ExtractedPreference {
+  id                   String   @id @default(cuid())
+  interviewId          String   @unique
+  preferredFoods       String[]
+  dislikedFoods        String[]
+  allergies            String[]
+  preferredActivities  String[]
+  preferredAtmospheres String[]
+  budgetMin            Int?
+  budgetMax            Int?
+  budgetCurrency       String   @default("KRW")
+  mustHave             String[]
+  mustAvoid            String[]
+  sourceMessageIds     String[]
+  // 사용자가 제출 전 직접 수정했는지 여부
+  editedByUser         Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+
+  interview AiInterview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+}
+
+// ── 코스와 투표 ─────────────────────────────────────────────────────
+
+model Course {
+  id                       String       @id @default(cuid())
+  meetingId                String
+  version                  Int          @default(1)
+  status                   CourseStatus @default(VOTING)
+  title                    String
+  summary                  String
+  estimatedBudgetPerPerson Int
+  // 코스 생성 완료 시각. 1차 투표 창은 여기서 시작한다.
+  votingStartedAt          DateTime
+  // votingStartedAt + 60분. 부분 재생성으로 절대 변경하지 않는다.
+  votingEndsAt             DateTime
+  // 과반수 계산의 분모. 생성 시점에 고정한다.
+  eligibleParticipantCount Int
+  confirmedAt              DateTime?
+  createdAt                DateTime     @default(now())
+
+  meeting Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  items   CourseItem[]
+
+  @@unique([meetingId, version])
+  @@index([meetingId])
+  @@index([status, votingEndsAt])
+}
+
+model CourseItem {
+  id                    String             @id @default(cuid())
+  courseId              String
+  sequence              Int
+  category              CourseItemCategory
+  title                 String
+  placeId               String?
+  placeName             String
+  address               String?
+  latitude              Float?
+  longitude             Float?
+  petFriendly           Boolean?
+  petFriendlyVerifiedAt DateTime?
+  startAt               DateTime
+  endAt                 DateTime
+  estimatedPricePerPerson Int
+  reason                String
+  // 앞 장소에서의 예상 이동시간(분)
+  travelMinutesFromPrev Int                @default(0)
+  fixedScheduleId       String?
+  generationVersion     Int                @default(1)
+  regenerationCount     Int                @default(0)
+  maxRegenerationCount  Int                @default(2)
+  status                CourseItemStatus   @default(ACTIVE)
+  // 재생성으로 교체된 항목만 값이 있다. min(재생성완료 + 10분, course.votingEndsAt)
+  revoteEndsAt          DateTime?
+  regeneratedAt         DateTime?
+  // 교체된 이전 항목을 가리켜 이력을 추적한다.
+  replacedByItemId      String?
+  createdAt             DateTime           @default(now())
+
+  course        Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  fixedSchedule FixedSchedule? @relation(fields: [fixedScheduleId], references: [id])
+  votes         CourseVote[]
+  regenJobs     AiJob[]
+  recordPhotos  RecordPhoto[]
+  recordPosts   RecordPost[]
+  feedbackItems FeedbackItem[]
+
+  @@index([courseId, sequence])
+  @@index([courseId, status])
+  @@index([revoteEndsAt])
+}
+
+model CourseVote {
+  id                String    @id @default(cuid())
+  courseItemId      String
+  userId            String
+  vote              VoteValue
+  // 투표 당시 항목 버전. 교체 후 도착한 늦은 투표를 걸러낸다.
+  itemGenerationVersion Int
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  courseItem CourseItem @relation(fields: [courseItemId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 한 항목에 한 사람은 한 표만 가진다.
+  @@unique([courseItemId, userId])
+  @@index([courseItemId, vote])
+}
+
+model RejectedPlace {
+  id           String   @id @default(cuid())
+  meetingId    String
+  placeId      String
+  placeName    String
+  courseItemId String?
+  reason       String   @default("MAJORITY_DISLIKE")
+  rejectedAt   DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  // 같은 약속에서 같은 장소를 두 번 블랙리스트에 넣지 않는다.
+  @@unique([meetingId, placeId])
+  @@index([meetingId])
+}
+
+// ── 비동기 작업 ─────────────────────────────────────────────────────
+
+model AiJob {
+  id           String      @id @default(cuid())
+  meetingId    String
+  courseItemId String?
+  type         AiJobType
+  status       AiJobStatus @default(QUEUED)
+  // 재생성 작업 중복 실행 방지용. courseItemId + generationVersion 조합으로 잠근다.
+  targetGenerationVersion Int?
+  scheduledAt  DateTime    @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  attempts     Int         @default(0)
+  errorCode    String?
+  errorMessage String?
+  payload      Json?
+  result       Json?
+
+  meeting    Meeting     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  courseItem CourseItem? @relation(fields: [courseItemId], references: [id], onDelete: Cascade)
+
+  @@unique([courseItemId, targetGenerationVersion, type])
+  @@index([status, scheduledAt])
+  @@index([meetingId, type])
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(cuid())
+  key          String
+  userId       String
+  endpoint     String
+  requestHash  String
+  statusCode   Int
+  responseBody Json
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([key, userId, endpoint])
+  @@index([expiresAt])
+}
+
+// ── 약속 후 기록 ────────────────────────────────────────────────────
+
+model MeetingRecord {
+  id        String   @id @default(cuid())
+  meetingId String   @unique
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meeting  Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  photos   RecordPhoto[]
+  posts    RecordPost[]
+}
+
+model RecordPhoto {
+  id            String   @id @default(cuid())
+  recordId      String
+  courseItemId  String?
+  authorUserId  String
+  fileUrl       String
+  storageKey    String?
+  caption       String?
+  createdAt     DateTime @default(now())
+
+  record     MeetingRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  courseItem CourseItem?   @relation(fields: [courseItemId], references: [id], onDelete: SetNull)
+  author     User          @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([recordId, courseItemId])
+}
+
+model RecordPost {
+  id           String   @id @default(cuid())
+  recordId     String
+  courseItemId String?
+  authorUserId String
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  record     MeetingRecord   @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  courseItem CourseItem?     @relation(fields: [courseItemId], references: [id], onDelete: SetNull)
+  author     User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  comments   RecordComment[]
+
+  @@index([recordId, courseItemId])
+}
+
+model RecordComment {
+  id           String   @id @default(cuid())
+  postId       String
+  authorUserId String
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  post   RecordPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User       @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
+// ── 피드백 ──────────────────────────────────────────────────────────
+
+model Feedback {
+  id          String         @id @default(cuid())
+  meetingId   String
+  userId      String
+  rating      FeedbackRating?
+  content     String?
+  status      FeedbackStatus @default(DRAFT)
+  submittedAt DateTime?
+  // 기본 설정 반영 제안. 사용자가 승인해야만 UserPreference에 반영한다.
+  suggestedPreferenceUpdates Json?
+  appliedToPreferenceAt      DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  meeting Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items   FeedbackItem[]
+
+  @@unique([meetingId, userId])
+  @@index([meetingId, status])
+}
+
+model FeedbackItem {
+  id           String          @id @default(cuid())
+  feedbackId   String
+  courseItemId String
+  rating       FeedbackRating?
+  // TOO_EXPENSIVE, TOO_MUCH_WALKING, GOOD_ATMOSPHERE 등
+  reasonCodes  String[]
+  wouldRevisit Boolean?
+
+  feedback   Feedback   @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  courseItem CourseItem @relation(fields: [courseItemId], references: [id], onDelete: Cascade)
+
+  @@unique([feedbackId, courseItemId])
+}
+
+// ── 알림 ────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  meetingId String?
+  linkUrl   String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}

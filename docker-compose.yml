@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oneulcourse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oneulcourse
+      POSTGRES_PASSWORD: oneulcourse
+      POSTGRES_DB: oneulcourse
+    ports:
+      - '5432:5432'
+    volumes:
+      - oneulcourse-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U oneulcourse']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  oneulcourse-pgdata:

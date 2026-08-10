@@ -1,0 +1,32 @@
+{
+  "name": "today-course",
+  "version": "0.1.0",
+  "private": true,
+  "description": "오늘코스 — 모두의 취향으로 만드는 모임 코스 추천 서비스",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace @oneulcourse/web",
+    "build": "npm run build --workspace @oneulcourse/web",
+    "start": "npm run start --workspace @oneulcourse/web",
+    "lint": "npm run lint --workspace @oneulcourse/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace @oneulcourse/web",
+    "db:migrate": "npm run db:migrate --workspace @oneulcourse/web",
+    "db:push": "npm run db:push --workspace @oneulcourse/web",
+    "db:seed": "npm run db:seed --workspace @oneulcourse/web",
+    "db:studio": "npm run db:studio --workspace @oneulcourse/web",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

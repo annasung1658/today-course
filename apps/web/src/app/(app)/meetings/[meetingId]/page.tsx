@@ -1,0 +1,128 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getSession } from '@/lib/auth/session';
+import { getMeetingDetail } from '@/server/meeting-service';
+import { formatDate, formatDateTime, formatTime, meetingStatusLabels, participantStatusLabels } from '@/lib/format';
+import { SectionHeading, StatusChip } from '@/components/ui';
+import { InviteLink } from '@/components/invite-link';
+
+interface PageProps {
+  params: Promise<{ meetingId: string }>;
+}
+
+export default async function MeetingDetailPage({ params }: PageProps) {
+  const { meetingId } = await params;
+  const session = await getSession();
+  if (!session) redirect(`/login?returnTo=/meetings/${meetingId}`);
+
+  const meeting = (await getMeetingDetail(meetingId, session.userId)) as Awaited<
+    ReturnType<typeof getMeetingDetail>
+  >;
+
+  const myParticipant = meeting.participants.find((p) => p.isMe);
+  const submitted = meeting.participants.filter((p) => p.status === 'INTERVIEW_COMPLETED').length;
+  const total = meeting.participants.filter((p) => p.status !== 'DECLINED').length;
+  const needsMyResponse = myParticipant?.status !== 'INTERVIEW_COMPLETED';
+
+  return (
+    <div className="space-y-8">
+      <header>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip tone={meeting.status === 'VOTING' ? 'accent' : 'neutral'}>
+            {meetingStatusLabels[meeting.status] ?? meeting.status}
+          </StatusChip>
+          {meeting.isHost && <StatusChip>내가 만든 약속</StatusChip>}
+        </div>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">{meeting.title}</h1>
+        <p className="mt-1 text-sm text-ink-500">
+          {formatDate(meeting.scheduledStartAt)} · {formatTime(meeting.scheduledStartAt)}–
+          {formatTime(meeting.scheduledEndAt)} · {meeting.area.name}
+        </p>
+      </header>
+
+      {meeting.currentCourse && meeting.status === 'VOTING' && (
+        <div className="card border-accent-100 bg-accent-50 p-5">
+          <p className="font-semibold text-accent-700">코스가 나왔어요</p>
+          <p className="mt-1 text-sm text-accent-700">
+            {formatDateTime(meeting.currentCourse.votingEndsAt)}까지 투표할 수 있어요.
+          </p>
+          <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-primary mt-3">
+            투표하러 가기
+          </Link>
+        </div>
+      )}
+
+      {meeting.currentCourse && meeting.status === 'CONFIRMED' && (
+        <div className="card p-5">
+          <p className="font-semibold">코스가 확정됐어요</p>
+          <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
+            확정된 코스 보기
+          </Link>
+        </div>
+      )}
+
+      {needsMyResponse && ['INVITING', 'COLLECTING_RESPONSES'].includes(meeting.status) && (
+        <div className="card p-5">
+          <p className="font-semibold">아직 취향을 알려주지 않았어요</p>
+          <p className="mt-1 text-sm text-ink-500">
+            {formatDateTime(meeting.responseDeadlineAt)}까지 답해주세요. 답변은 나만 볼 수 있어요.
+          </p>
+          <Link href={`/meetings/${meeting.id}/interview`} className="btn-primary mt-3">
+            취향 알려주기
+          </Link>
+        </div>
+      )}
+
+      {meeting.isHost && ['INVITING', 'COLLECTING_RESPONSES'].includes(meeting.status) && (
+        <section>
+          <SectionHeading title="친구 초대하기" description="링크를 받은 사람은 로그인 후 참여할 수 있어요." />
+          <InviteLink meetingId={meeting.id} />
+        </section>
+      )}
+
+      <section>
+        <SectionHeading
+          title="참여자"
+          description={`${total}명 중 ${submitted}명이 취향을 알려줬어요. 답변 내용은 본인만 볼 수 있어요.`}
+        />
+        <ul className="card divide-y divide-ink-100">
+          {meeting.participants.map((participant) => (
+            <li key={participant.participantId} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="truncate text-sm font-medium">
+                {participant.nickname}
+                {participant.role === 'HOST' && <span className="ml-1.5 text-xs text-ink-300">방장</span>}
+                {participant.isMe && <span className="ml-1.5 text-xs text-ink-300">나</span>}
+              </span>
+              <StatusChip tone={participant.status === 'INTERVIEW_COMPLETED' ? 'good' : 'neutral'}>
+                {participantStatusLabels[participant.status] ?? participant.status}
+              </StatusChip>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {meeting.fixedSchedules.length > 0 && (
+        <section>
+          <SectionHeading title="이미 정해진 일정" description="AI가 바꾸지 않고 그대로 코스에 넣어요." />
+          <ul className="card divide-y divide-ink-100">
+            {meeting.fixedSchedules.map((schedule) => (
+              <li key={schedule.id} className="px-4 py-3">
+                <p className="text-sm font-semibold">{schedule.title}</p>
+                <p className="mt-0.5 text-sm text-ink-500">
+                  {formatTime(schedule.startAt)}–{formatTime(schedule.endAt)} · {schedule.placeName}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {meeting.specialNotes && (
+        <section>
+          <SectionHeading title="미리 알려둔 점" />
+          <p className="card p-4 text-sm leading-relaxed text-ink-700">{meeting.specialNotes}</p>
+        </section>
+      )}
+    </div>
+  );
+}

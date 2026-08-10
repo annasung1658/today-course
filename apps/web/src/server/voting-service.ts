@@ -1,0 +1,439 @@
+import { prisma } from '@/lib/prisma';
+import { apiError } from '@/lib/api/errors';
+import {
+  aggregatePreferences,
+  buildRegenerationConstraints,
+  calcItemRevoteEndsAt,
+  canVoteOnItem,
+  decideRegeneration,
+  isStaleVote,
+  itemVotingPhase,
+  remainingSecondsForCourse,
+  remainingSecondsForItem,
+  requiredDislikeCount,
+  votingPolicy,
+  type VoteValue,
+} from '@oneulcourse/core';
+import { getAiProvider, getPlaceProvider } from '@/providers';
+import { notify } from '@/server/notification-service';
+import type { PrismaRow, PrismaTx } from '@/server/prisma-types';
+
+/**
+ * 투표·부분 재생성 서비스.
+ *
+ * 시간 규칙(정책 §votingPolicy):
+ *  - 코스 전체 투표 창은 생성 완료 + 60분이며 절대 바뀌지 않는다.
+ *  - 재생성으로 교체된 항목만 재생성 완료 + 10분의 재투표 창을 갖는다.
+ *  - 재투표 창은 코스 종료시간을 넘길 수 없고, 코스 확정 시각에 영향을 주지 않는다.
+ */
+
+export interface VotingStateItem {
+  courseItemId: string;
+  sequence: number;
+  category: string;
+  title: string;
+  placeName: string;
+  address: string | null;
+  startAt: string;
+  endAt: string;
+  estimatedPricePerPerson: number;
+  reason: string;
+  travelMinutesFromPrev: number;
+  generationVersion: number;
+  likeCount: number;
+  dislikeCount: number;
+  myVote: VoteValue | null;
+  status: string;
+  phase: 'INITIAL' | 'REVOTE' | 'CLOSED';
+  revoteEndsAt: string | null;
+  remainingSeconds: number;
+  regenerationCount: number;
+  maxRegenerationCount: number;
+  isFixedSchedule: boolean;
+}
+
+export async function getVotingState(courseId: string, userId: string) {
+  const now = new Date();
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: {
+      items: {
+        where: { status: { not: 'REPLACED' } },
+        orderBy: { sequence: 'asc' },
+        include: { votes: true },
+      },
+      meeting: { select: { id: true, title: true, participants: { select: { id: true, status: true } } } },
+    },
+  });
+  if (!course) throw apiError('RESOURCE_NOT_FOUND');
+
+  await assertParticipant(course.meetingId, userId);
+
+  const courseWindow = { votingStartedAt: course.votingStartedAt, votingEndsAt: course.votingEndsAt };
+  const eligible = course.eligibleParticipantCount;
+
+  const items: VotingStateItem[] = course.items.map((item: PrismaRow) => {
+    const votes = item.votes as Array<{ userId: string; vote: VoteValue }>;
+    const window = { revoteEndsAt: item.revoteEndsAt, status: item.status };
+    return {
+      courseItemId: item.id,
+      sequence: item.sequence,
+      category: item.category,
+      title: item.title,
+      placeName: item.placeName,
+      address: item.address,
+      startAt: item.startAt.toISOString(),
+      endAt: item.endAt.toISOString(),
+      estimatedPricePerPerson: item.estimatedPricePerPerson,
+      reason: item.reason,
+      travelMinutesFromPrev: item.travelMinutesFromPrev,
+      generationVersion: item.generationVersion,
+      likeCount: votes.filter((v) => v.vote === 'LIKE').length,
+      dislikeCount: votes.filter((v) => v.vote === 'DISLIKE').length,
+      myVote: votes.find((v) => v.userId === userId)?.vote ?? null,
+      status: item.status,
+      phase: itemVotingPhase(courseWindow, window, now),
+      revoteEndsAt: item.revoteEndsAt?.toISOString() ?? null,
+      remainingSeconds: remainingSecondsForItem(courseWindow, window, now),
+      regenerationCount: item.regenerationCount,
+      maxRegenerationCount: item.maxRegenerationCount,
+      isFixedSchedule: item.fixedScheduleId !== null,
+    };
+  });
+
+  return {
+    courseId: course.id,
+    meetingId: course.meetingId,
+    meetingTitle: course.meeting.title,
+    title: course.title,
+    summary: course.summary,
+    estimatedBudgetPerPerson: course.estimatedBudgetPerPerson,
+    status: course.status === 'CONFIRMED' ? ('CLOSED' as const) : ('OPEN' as const),
+    startedAt: course.votingStartedAt.toISOString(),
+    endsAt: course.votingEndsAt.toISOString(),
+    serverTime: now.toISOString(),
+    remainingSeconds: remainingSecondsForCourse(courseWindow, now),
+    eligibleParticipantCount: eligible,
+    requiredDislikeCount: requiredDislikeCount(eligible),
+    initialWindowMinutes: votingPolicy.initialWindowMinutes,
+    revoteWindowMinutes: votingPolicy.revoteWindowMinutes,
+    items,
+  };
+}
+
+export interface CastVoteInput {
+  courseId: string;
+  itemId: string;
+  userId: string;
+  vote: VoteValue;
+  itemGenerationVersion: number;
+}
+
+/**
+ * 투표 저장과 과반수 판정을 하나의 트랜잭션에서 처리한다.
+ * 재생성이 필요하면 같은 트랜잭션 안에서 AiJob을 만들어 중복 실행을 막는다.
+ */
+export async function castVote(input: CastVoteInput) {
+  const now = new Date();
+
+  const result = await prisma.$transaction(async (tx: PrismaTx) => {
+    const item = await tx.courseItem.findUnique({
+      where: { id: input.itemId },
+      include: { course: true },
+    });
+    if (!item || item.courseId !== input.courseId) throw apiError('RESOURCE_NOT_FOUND');
+
+    const course = item.course;
+    if (course.status === 'CONFIRMED') throw apiError('VOTING_CLOSED');
+
+    // 교체 전 항목에 도착한 늦은 투표는 거절한다.
+    if (isStaleVote(input.itemGenerationVersion, item.generationVersion)) {
+      throw apiError('STALE_COURSE_ITEM', {
+        currentGenerationVersion: item.generationVersion,
+      });
+    }
+
+    // 픽스 일정은 투표 대상이 아니다.
+    if (item.fixedScheduleId) throw apiError('FORBIDDEN', { reason: '픽스 일정은 투표할 수 없습니다.' });
+
+    const gate = canVoteOnItem(
+      { votingStartedAt: course.votingStartedAt, votingEndsAt: course.votingEndsAt },
+      { revoteEndsAt: item.revoteEndsAt, status: item.status },
+      now,
+    );
+    if (!gate.allowed) {
+      if (gate.reason === 'VOTING_CLOSED') throw apiError('VOTING_CLOSED');
+      if (gate.reason === 'REVOTE_WINDOW_CLOSED') throw apiError('REVOTE_WINDOW_CLOSED');
+      throw apiError('INVALID_MEETING_STATUS', { reason: '지금은 이 항목에 투표할 수 없습니다.' });
+    }
+
+    await assertParticipantTx(tx, course.meetingId, input.userId);
+
+    await tx.courseVote.upsert({
+      where: { courseItemId_userId: { courseItemId: item.id, userId: input.userId } },
+      create: {
+        courseItemId: item.id,
+        userId: input.userId,
+        vote: input.vote,
+        itemGenerationVersion: item.generationVersion,
+      },
+      update: { vote: input.vote, itemGenerationVersion: item.generationVersion },
+    });
+
+    const [likeCount, dislikeCount] = await Promise.all([
+      tx.courseVote.count({ where: { courseItemId: item.id, vote: 'LIKE' } }),
+      tx.courseVote.count({ where: { courseItemId: item.id, vote: 'DISLIKE' } }),
+    ]);
+
+    const decision = decideRegeneration({
+      dislikeCount,
+      eligibleParticipantCount: course.eligibleParticipantCount,
+      regenerationCount: item.regenerationCount,
+      itemStatus: item.status,
+    });
+
+    let itemStatus: string = item.status;
+
+    if (decision.action === 'REGENERATE') {
+      itemStatus = 'REGENERATION_QUEUED';
+      await tx.courseItem.update({ where: { id: item.id }, data: { status: 'REGENERATION_QUEUED' } });
+
+      // 거절된 장소는 이 약속의 블랙리스트에 남겨 다시 추천하지 않는다.
+      if (item.placeId) {
+        await tx.rejectedPlace.upsert({
+          where: { meetingId_placeId: { meetingId: course.meetingId, placeId: item.placeId } },
+          create: {
+            meetingId: course.meetingId,
+            placeId: item.placeId,
+            placeName: item.placeName,
+            courseItemId: item.id,
+            reason: 'MAJORITY_DISLIKE',
+          },
+          update: {},
+        });
+      }
+
+      // courseItemId + generationVersion + type 고유 제약이 중복 작업을 막는다.
+      await tx.aiJob.create({
+        data: {
+          meetingId: course.meetingId,
+          courseItemId: item.id,
+          type: 'ITEM_REGENERATION',
+          status: 'QUEUED',
+          targetGenerationVersion: item.generationVersion,
+          payload: { courseId: course.id, sequence: item.sequence },
+        },
+      });
+    } else if (decision.action === 'LOCK') {
+      itemStatus = 'LOCKED';
+      await tx.courseItem.update({ where: { id: item.id }, data: { status: 'LOCKED' } });
+    }
+
+    return {
+      courseItemId: item.id,
+      meetingId: course.meetingId,
+      myVote: input.vote,
+      likeCount,
+      dislikeCount,
+      requiredDislikeCount: requiredDislikeCount(course.eligibleParticipantCount),
+      regenerationTriggered: decision.action === 'REGENERATE',
+      lockedByLimit: decision.action === 'LOCK',
+      itemStatus,
+    };
+  });
+
+  // 트랜잭션 밖에서 실제 재생성을 돌린다. 실패해도 투표는 이미 저장되어 있다.
+  if (result.regenerationTriggered) {
+    void runItemRegeneration(input.itemId).catch((error) => {
+      console.error('[regeneration] failed', error);
+    });
+  }
+
+  return result;
+}
+
+export async function clearVote(courseId: string, itemId: string, userId: string) {
+  const now = new Date();
+  const item = await prisma.courseItem.findUnique({ where: { id: itemId }, include: { course: true } });
+  if (!item || item.courseId !== courseId) throw apiError('RESOURCE_NOT_FOUND');
+
+  const gate = canVoteOnItem(
+    { votingStartedAt: item.course.votingStartedAt, votingEndsAt: item.course.votingEndsAt },
+    { revoteEndsAt: item.revoteEndsAt, status: item.status },
+    now,
+  );
+  // 재생성이 시작된 뒤에는 이전 항목의 투표를 취소할 수 없다.
+  if (!gate.allowed) throw apiError('VOTING_CLOSED');
+
+  await prisma.courseVote.deleteMany({ where: { courseItemId: itemId, userId } });
+  return { courseItemId: itemId, myVote: null };
+}
+
+/**
+ * 항목 하나만 다시 만든다.
+ * 카테고리·시간대·다른 항목·픽스 일정은 그대로 두고 장소만 바꾼다.
+ * 새 항목은 재생성 완료 시점부터 10분(코스 종료시간 이내)의 재투표 창을 갖는다.
+ */
+export async function runItemRegeneration(itemId: string): Promise<void> {
+  const job = await prisma.aiJob.findFirst({
+    where: { courseItemId: itemId, type: 'ITEM_REGENERATION', status: 'QUEUED' },
+    orderBy: { scheduledAt: 'desc' },
+  });
+  if (!job) return;
+
+  await prisma.aiJob.update({
+    where: { id: job.id },
+    data: { status: 'RUNNING', startedAt: new Date(), attempts: { increment: 1 } },
+  });
+  await prisma.courseItem.update({ where: { id: itemId }, data: { status: 'REGENERATING' } });
+
+  try {
+    const oldItem = await prisma.courseItem.findUniqueOrThrow({
+      where: { id: itemId },
+      include: { course: { include: { meeting: true, items: { orderBy: { sequence: 'asc' } } } } },
+    });
+    const course = oldItem.course;
+
+    const siblings = course.items
+      .filter((i: PrismaRow) => i.status !== 'REPLACED')
+      .map((i: PrismaRow) => ({
+        sequence: i.sequence,
+        category: i.category,
+        startAt: i.startAt,
+        endAt: i.endAt,
+        placeId: i.placeId,
+        fixedScheduleId: i.fixedScheduleId,
+      }));
+
+    const constraints = buildRegenerationConstraints(siblings, oldItem.sequence);
+    if (!constraints) throw apiError('RESOURCE_NOT_FOUND');
+
+    const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: course.meetingId } });
+    const aggregated = await loadAggregatedPreferences(course.meetingId);
+    const places = await getPlaceProvider().search({
+      area: course.meeting.areaName,
+      category: constraints.category,
+      limit: 30,
+    });
+
+    const generated = await getAiProvider().regenerateItem({
+      meetingTitle: course.meeting.title,
+      areaName: course.meeting.areaName,
+      aggregated,
+      target: {
+        category: constraints.category,
+        startAt: constraints.startAt,
+        endAt: constraints.endAt,
+        sequence: oldItem.sequence,
+      },
+      neighbours: { previousPlaceName: null, nextPlaceName: null },
+      availablePlaces: places,
+      rejectedPlaceIds: [
+        ...rejected.map((r: PrismaRow) => r.placeId),
+        ...constraints.lockedPlaceIds,
+      ],
+    });
+
+    const regeneratedAt = new Date();
+    const revoteEndsAt = calcItemRevoteEndsAt(regeneratedAt, course.votingEndsAt);
+
+    await prisma.$transaction(async (tx: PrismaTx) => {
+      // 이전 항목은 REPLACED로 남겨 이력을 보존한다. 투표는 새 항목에서 0부터 시작한다.
+      const created = await tx.courseItem.create({
+        data: {
+          courseId: course.id,
+          sequence: oldItem.sequence,
+          category: generated.category,
+          title: generated.title,
+          placeId: generated.placeId,
+          placeName: generated.placeName,
+          address: generated.address,
+          latitude: generated.latitude,
+          longitude: generated.longitude,
+          startAt: generated.startAt,
+          endAt: generated.endAt,
+          estimatedPricePerPerson: generated.estimatedPricePerPerson,
+          reason: generated.reason,
+          travelMinutesFromPrev: generated.travelMinutesFromPrev,
+          generationVersion: oldItem.generationVersion + 1,
+          regenerationCount: oldItem.regenerationCount + 1,
+          maxRegenerationCount: oldItem.maxRegenerationCount,
+          status: oldItem.regenerationCount + 1 >= votingPolicy.maxRegenerationPerItem ? 'LOCKED' : 'ACTIVE',
+          revoteEndsAt,
+          regeneratedAt,
+        },
+      });
+
+      await tx.courseItem.update({
+        where: { id: oldItem.id },
+        data: { status: 'REPLACED', replacedByItemId: created.id },
+      });
+
+      await tx.aiJob.update({
+        where: { id: job.id },
+        data: { status: 'SUCCEEDED', finishedAt: new Date(), result: { newItemId: created.id } },
+      });
+    });
+
+    await notify.itemRegenerated(course.meetingId, oldItem.sequence, generated.placeName);
+  } catch (error) {
+    await prisma.aiJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'FAILED',
+        finishedAt: new Date(),
+        errorMessage: error instanceof Error ? error.message : 'unknown',
+      },
+    });
+    // 실패하면 직전 정상 항목을 그대로 유지한다.
+    await prisma.courseItem.update({ where: { id: itemId }, data: { status: 'ACTIVE' } });
+  }
+}
+
+// ── 공통 헬퍼 ───────────────────────────────────────────────────────
+
+async function assertParticipant(meetingId: string, userId: string) {
+  const participant = await prisma.participant.findUnique({
+    where: { meetingId_userId: { meetingId, userId } },
+  });
+  if (!participant || participant.status === 'DECLINED') throw apiError('FORBIDDEN');
+  return participant;
+}
+
+async function assertParticipantTx(tx: PrismaTx, meetingId: string, userId: string) {
+  const participant = await tx.participant.findUnique({
+    where: { meetingId_userId: { meetingId, userId } },
+  });
+  if (!participant || participant.status === 'DECLINED') throw apiError('FORBIDDEN');
+  return participant;
+}
+
+export async function loadAggregatedPreferences(meetingId: string) {
+  const interviews = await prisma.aiInterview.findMany({
+    where: { meetingId, status: 'SUBMITTED' },
+    include: { extracted: true },
+  });
+
+  return aggregatePreferences(
+    interviews
+      .filter((i: PrismaRow) => i.extracted)
+      .map((i: PrismaRow, index: number) => ({
+        anonymousParticipantId: `anon_${index + 1}`,
+        preferredFoods: i.extracted!.preferredFoods,
+        dislikedFoods: i.extracted!.dislikedFoods,
+        allergies: i.extracted!.allergies,
+        preferredActivities: i.extracted!.preferredActivities,
+        preferredAtmospheres: i.extracted!.preferredAtmospheres,
+        budget:
+          i.extracted!.budgetMin !== null && i.extracted!.budgetMax !== null
+            ? {
+                min: i.extracted!.budgetMin,
+                max: i.extracted!.budgetMax,
+                currency: i.extracted!.budgetCurrency,
+              }
+            : null,
+        mustHave: i.extracted!.mustHave,
+        mustAvoid: i.extracted!.mustAvoid,
+      })),
+  );
+}
