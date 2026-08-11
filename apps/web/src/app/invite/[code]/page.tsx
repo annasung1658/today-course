@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
 import { InviteActions } from '@/components/invite-actions';
+import { InvitationReveal } from '@/components/invitation-reveal';
 import { getSession } from '@/lib/auth/session';
 import { previewInvitation } from '@/server/meeting-service';
 import { formatDate, formatTime } from '@/lib/format';
@@ -50,28 +51,17 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
   return (
     <>
       <SiteHeader />
-      <main className="container-page flex justify-center py-14">
-        <div className="w-full max-w-md">
-          <article className="card overflow-hidden">
-            <div className="border-b border-ink-100 bg-ink-50 px-6 py-5 text-center">
-              <p className="text-sm text-ink-500">{invitation.hostNickname}님이 초대했어요</p>
-              <h1 className="mt-1.5 text-xl font-bold tracking-tight">{invitation.meetingTitle}</h1>
-            </div>
-
-            <dl className="space-y-3 px-6 py-6 text-sm">
-              <Row label="언제">
-                {formatDate(invitation.scheduledStartAt)}
-                <br />
-                {formatTime(invitation.scheduledStartAt)} – {formatTime(invitation.scheduledEndAt)}
-              </Row>
-              <Row label="어디서">{invitation.areaName}</Row>
-              <Row label="몇 명">
-                {invitation.currentParticipantCount}/{invitation.capacity}명
-              </Row>
-            </dl>
-
-            <div className="border-t border-ink-100 px-6 py-5">
-              {invitation.expired ? (
+      <main className="container-page flex justify-center overflow-hidden py-10 sm:py-14">
+        <InvitationReveal
+          hostNickname={invitation.hostNickname}
+          meetingTitle={invitation.meetingTitle}
+          scheduledStartAt={invitation.scheduledStartAt}
+          scheduledEndAt={invitation.scheduledEndAt}
+          areaName={invitation.areaName}
+          currentParticipantCount={invitation.currentParticipantCount}
+          capacity={invitation.capacity}
+          actions={
+            invitation.expired ? (
                 <p className="text-center text-sm font-medium text-ink-500">
                   이 초대 링크는 만료됐어요. 방장에게 새 링크를 요청해 주세요.
                 </p>
@@ -90,24 +80,10 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
                     가입하면 취향을 저장해두고 다음 약속에서 바로 쓸 수 있어요.
                   </p>
                 </div>
-              )}
-            </div>
-          </article>
-
-          <p className="mt-5 text-center text-sm leading-relaxed text-ink-500">
-            참여하면 AI가 몇 가지를 물어봐요. 답변은 나만 볼 수 있고, 모두의 취향을 모아 코스 하나를 추천해요.
-          </p>
-        </div>
+              )
+          }
+        />
       </main>
     </>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex gap-4">
-      <dt className="w-16 shrink-0 text-ink-500">{label}</dt>
-      <dd className="font-medium">{children}</dd>
-    </div>
   );
 }

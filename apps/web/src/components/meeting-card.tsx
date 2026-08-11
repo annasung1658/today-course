@@ -18,9 +18,9 @@ export function MeetingCard({ meeting }: { meeting: MeetingSummary }) {
       : `/meetings/${meeting.id}`;
 
   return (
-    <Link href={href} className="card block p-4 transition-colors hover:border-ink-200 hover:bg-ink-50">
+    <Link href={href} className="card card-interactive group block overflow-hidden p-5">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="truncate font-semibold tracking-tight">{meeting.title}</h3>
+        <h3 className="truncate font-bold tracking-tight transition-colors group-hover:text-accent-700">{meeting.title}</h3>
         <StatusChip tone={toneByStatus[meeting.status] ?? 'neutral'}>
           {meetingStatusLabels[meeting.status] ?? meeting.status}
         </StatusChip>

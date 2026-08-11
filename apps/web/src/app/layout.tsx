@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: '오늘코스',
     locale: 'ko_KR',
+    images: [{ url: '/today-course-logo.png', width: 512, height: 512, alt: '오늘코스 로고' }],
   },
 };
 
