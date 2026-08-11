@@ -68,6 +68,8 @@ export function VotingBoard({
   const [state, setState] = useState(initialState);
   const [error, setError] = useState<string | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
+  const [adItem, setAdItem] = useState<VotingItem | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const courseRemaining = useServerCountdown(state.endsAt, state.serverTime);
 
@@ -113,10 +115,26 @@ export function VotingBoard({
     }
   };
 
+  const resetAfterAd = async () => {
+    if (!adItem) return;
+    setResetting(true);
+    setError(null);
+    try {
+      await apiFetch(`/courses/${state.courseId}/items/${adItem.courseItemId}/ad-reset`, { method: 'POST' });
+      setAdItem(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : '재생성 횟수를 초기화하지 못했어요.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const closed = state.status === 'CLOSED' || courseRemaining <= 0;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
+    <>
+      <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
       <div className="order-2 space-y-3 lg:order-1">
         {error && <ErrorNotice message={error} />}
 
@@ -142,6 +160,7 @@ export function VotingBoard({
             revoteWindowMinutes={state.revoteWindowMinutes}
             disabled={closed || pendingItemId === item.courseItemId}
             onVote={vote}
+            onWatchAd={setAdItem}
           />
         ))}
       </div>
@@ -153,7 +172,50 @@ export function VotingBoard({
           closed={closed}
         />
       </aside>
-    </div>
+      </div>
+
+      {adItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/35 p-4 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm overflow-hidden rounded-[2rem] bg-white shadow-[0_24px_80px_rgba(15,40,70,.28)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ad-title"
+          >
+            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold text-accent-600">재생성 기회 충전</p>
+                <h2 id="ad-title" className="font-extrabold text-ink-900">광고 보고 초기화</h2>
+              </div>
+              <button
+                type="button"
+                className="rounded-xl px-3 py-2 text-sm text-ink-500 hover:bg-ink-50"
+                onClick={() => setAdItem(null)}
+                disabled={resetting}
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="m-5 flex aspect-video items-center justify-center rounded-[1.5rem] border border-accent-100 bg-gradient-to-br from-accent-50 to-white">
+              <div className="text-center">
+                <p className="text-4xl font-black tracking-[0.18em] text-accent-600">광고</p>
+                <p className="mt-2 text-xs text-ink-500">광고 영역 HTML 미리보기</p>
+              </div>
+            </div>
+
+            <div className="px-5 pb-5">
+              <p className="mb-3 text-center text-xs leading-relaxed text-ink-500">
+                광고 확인을 완료하면 {adItem.placeName}의 재생성 기회와 투표가 초기화돼요.
+              </p>
+              <button type="button" className="btn-primary w-full" onClick={resetAfterAd} disabled={resetting}>
+                {resetting ? '초기화하는 중' : '광고 시청 완료 · 3회 다시 받기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -200,6 +262,9 @@ function TimerPanel({
         코스 생성 후 {state.initialWindowMinutes}분 동안 투표할 수 있어요. 싫어요가 과반수(
         {state.requiredDislikeCount}명)인 항목만 다시 골라요.
       </p>
+      <p className="mt-2 rounded-xl bg-good-100 px-3 py-2 text-xs font-medium leading-relaxed text-good-600">
+        모든 참여자가 모든 항목에 투표하면 남은 시간과 관계없이 코스가 바로 확정돼요.
+      </p>
 
       {revoting > 0 && (
         <p className="mt-2 rounded-lg bg-accent-50 px-3 py-2 text-xs font-medium leading-relaxed text-accent-700">
@@ -229,6 +294,7 @@ function CourseItemCard({
   revoteWindowMinutes,
   disabled,
   onVote,
+  onWatchAd,
 }: {
   item: VotingItem;
   serverTime: string;
@@ -237,12 +303,13 @@ function CourseItemCard({
   revoteWindowMinutes: number;
   disabled: boolean;
   onVote: (item: VotingItem, value: 'LIKE' | 'DISLIKE') => void;
+  onWatchAd: (item: VotingItem) => void;
 }) {
   const revoteRemaining = useServerCountdown(item.revoteEndsAt, serverTime);
   const regenerating = item.status === 'REGENERATION_QUEUED' || item.status === 'REGENERATING';
   const locked = item.status === 'LOCKED';
   const revoteClosed = item.phase === 'CLOSED' && item.revoteEndsAt !== null;
-  const votable = !item.isFixedSchedule && !regenerating && !revoteClosed;
+  const votable = !item.isFixedSchedule && !regenerating && !revoteClosed && !locked;
 
   return (
     <article
@@ -319,6 +386,23 @@ function CourseItemCard({
           <span className="ml-auto text-xs text-ink-300">
             변경 {item.regenerationCount}/{item.maxRegenerationCount}
           </span>
+        </div>
+      )}
+
+      {locked && (
+        <div className="mt-4 rounded-2xl border border-accent-100 bg-accent-50 p-3.5">
+          <p className="text-sm font-semibold text-accent-800">장소 변경 3회를 모두 사용했어요</p>
+          <p className="mt-1 text-xs leading-relaxed text-accent-700">
+            광고를 확인하면 이 항목의 변경 횟수를 초기화할 수 있어요.
+          </p>
+          <button
+            type="button"
+            className="btn-secondary mt-3 w-full bg-white"
+            onClick={() => onWatchAd(item)}
+            disabled={disabled}
+          >
+            광고 보고 초기화
+          </button>
         </div>
       )}
     </article>

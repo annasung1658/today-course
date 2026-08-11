@@ -9,6 +9,7 @@ import {
   decideRegeneration,
   isStaleVote,
   itemVotingPhase,
+  haveAllEligibleVoted,
   remainingSecondsForCourse,
   remainingSecondsForItem,
   requiredDislikeCount,
@@ -101,7 +102,7 @@ export async function getVotingState(courseId: string, userId: string) {
       revoteEndsAt: item.revoteEndsAt?.toISOString() ?? null,
       remainingSeconds: remainingSecondsForItem(courseWindow, window, now),
       regenerationCount: item.regenerationCount,
-      maxRegenerationCount: item.maxRegenerationCount,
+      maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
       isFixedSchedule: item.fixedScheduleId !== null,
     };
   });
@@ -258,13 +259,15 @@ export async function castVote(input: CastVoteInput) {
     );
   }
 
-  return result;
+  const earlyFinalized = result.regenerationTriggered ? false : await finalizeCourseWhenAllVoted(input.courseId);
+  return { ...result, earlyFinalized };
 }
 
 export async function clearVote(courseId: string, itemId: string, userId: string) {
   const now = new Date();
   const item = await prisma.courseItem.findUnique({ where: { id: itemId }, include: { course: true } });
   if (!item || item.courseId !== courseId) throw apiError('RESOURCE_NOT_FOUND');
+  if (item.course.status === 'CONFIRMED') throw apiError('VOTING_CLOSED');
 
   const gate = canVoteOnItem(
     { votingStartedAt: item.course.votingStartedAt, votingEndsAt: item.course.votingEndsAt },
@@ -276,6 +279,87 @@ export async function clearVote(courseId: string, itemId: string, userId: string
 
   await prisma.courseVote.deleteMany({ where: { courseItemId: itemId, userId } });
   return { courseItemId: itemId, myVote: null };
+}
+
+/** 광고 확인 뒤 잠긴 항목의 재생성 기회와 투표를 초기화한다. */
+export async function resetRegenerationAfterAd(courseId: string, itemId: string, userId: string) {
+  const item = await prisma.courseItem.findUnique({ where: { id: itemId }, include: { course: true } });
+  if (!item || item.courseId !== courseId) throw apiError('RESOURCE_NOT_FOUND');
+  await assertParticipant(item.course.meetingId, userId);
+  if (item.course.status === 'CONFIRMED') throw apiError('VOTING_CLOSED');
+  if (item.status !== 'LOCKED' || item.regenerationCount < votingPolicy.maxRegenerationPerItem) {
+    throw apiError('INVALID_MEETING_STATUS', { reason: '재생성 횟수를 모두 사용한 항목만 초기화할 수 있습니다.' });
+  }
+
+  const reset = await prisma.$transaction(async (tx: PrismaTx) => {
+    await tx.courseVote.deleteMany({ where: { courseItemId: itemId } });
+    return tx.courseItem.update({
+      where: { id: itemId },
+      data: {
+        status: 'ACTIVE',
+        regenerationCount: 0,
+        maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+        revoteEndsAt: null,
+      },
+    });
+  });
+
+  return {
+    courseItemId: reset.id,
+    regenerationCount: reset.regenerationCount,
+    maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+    status: reset.status,
+  };
+}
+
+/** 모든 대상자의 모든 항목 투표가 끝나면 남은 시간을 기다리지 않고 코스를 확정한다. */
+async function finalizeCourseWhenAllVoted(courseId: string): Promise<boolean> {
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: {
+      items: {
+        where: { status: { not: 'REPLACED' } },
+        include: { votes: { select: { userId: true } } },
+      },
+      meeting: {
+        select: {
+          participants: {
+            where: { status: 'INTERVIEW_COMPLETED' },
+            select: { userId: true },
+          },
+        },
+      },
+    },
+  });
+  if (!course || course.status !== 'VOTING') return false;
+  if (course.items.some((item: PrismaRow) => ['REGENERATION_QUEUED', 'REGENERATING'].includes(item.status))) return false;
+
+  const eligibleUserIds = course.meeting.participants.map((participant: PrismaRow) => participant.userId);
+  if (eligibleUserIds.length !== course.eligibleParticipantCount) return false;
+  const votingItems = course.items.filter((item: PrismaRow) => item.fixedScheduleId === null);
+  const completed = haveAllEligibleVoted(
+    eligibleUserIds,
+    votingItems.map((item: PrismaRow) => ({ voterUserIds: item.votes.map((vote: PrismaRow) => vote.userId) })),
+  );
+  if (!completed) return false;
+
+  const now = new Date();
+  const confirmed = await prisma.$transaction(async (tx: PrismaTx) => {
+    const updated = await tx.course.updateMany({
+      where: { id: courseId, status: 'VOTING' },
+      data: { status: 'CONFIRMED', confirmedAt: now },
+    });
+    if (updated.count === 0) return false;
+    await tx.meeting.update({ where: { id: course.meetingId }, data: { status: 'CONFIRMED' } });
+    await tx.aiJob.updateMany({
+      where: { meetingId: course.meetingId, type: 'FINALIZE_COURSE', status: 'QUEUED' },
+      data: { status: 'SUCCEEDED', finishedAt: now, result: { reason: 'ALL_VOTES_COMPLETED' } },
+    });
+    return true;
+  });
+
+  if (confirmed) await notify.courseConfirmed(course.meetingId, course.title);
+  return confirmed;
 }
 
 /**

@@ -138,7 +138,7 @@ describe('시나리오: 응답 마감 → 코스 생성 → 투표 → 재생성
     );
   });
 
-  it('항목당 재생성은 2회까지만 허용한다', () => {
+  it('항목당 재생성은 3회까지만 허용한다', () => {
     expect(
       decideRegeneration({
         dislikeCount: 4,
