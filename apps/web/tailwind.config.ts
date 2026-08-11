@@ -1,9 +1,6 @@
 import type { Config } from 'tailwindcss';
 
-/**
- * 디자인 방향(지시서 §21): 흰 배경 / 검정·회색 중심 / 연한 파란색 포인트 /
- * 경고에만 최소한의 빨간색. 그래디언트·장식 금지.
- */
+/** 밝고 포근한 하늘색을 중심으로 한 제품 UI 토큰. */
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}', '../../packages/*/src/**/*.{ts,tsx}'],
   theme: {
@@ -19,11 +16,11 @@ const config: Config = {
           50: '#f6f7f8',
         },
         accent: {
-          700: '#1f5fa8',
-          600: '#2b7cd3',
-          500: '#4a95e6',
-          100: '#e2eefb',
-          50: '#f2f7fd',
+          700: '#1478c9',
+          600: '#2f92e5',
+          500: '#55adf2',
+          100: '#dcefff',
+          50: '#f0f8ff',
         },
         danger: { 600: '#c8322b', 100: '#fbe9e8' },
         good: { 600: '#2f7a4f', 100: '#e6f3ec' },
@@ -33,7 +30,25 @@ const config: Config = {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       maxWidth: { content: '72rem' },
-      borderRadius: { card: '0.75rem' },
+      borderRadius: { card: '1.5rem' },
+      boxShadow: {
+        card: '0 10px 30px rgba(48, 127, 190, 0.08)',
+        lift: '0 16px 42px rgba(48, 127, 190, 0.15)',
+      },
+      keyframes: {
+        'fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+      },
+      animation: {
+        'fade-up': 'fade-up .5s cubic-bezier(.22,1,.36,1) both',
+        float: 'float 4s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

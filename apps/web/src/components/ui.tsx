@@ -12,7 +12,8 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+    <div className="card flex flex-col items-center gap-3 overflow-hidden px-6 py-14 text-center">
+      <span className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-50 text-2xl shadow-sm" aria-hidden>☁️</span>
       <p className="text-base font-semibold text-ink-900">{title}</p>
       <p className="max-w-sm text-sm leading-relaxed text-ink-500">{description}</p>
       {action}
@@ -50,8 +51,8 @@ export function StatusChip({
 
 export function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-lg font-bold tracking-tight text-ink-900">{title}</h2>
+    <div className="mb-5">
+      <h2 className="text-xl font-bold tracking-tight text-ink-900">{title}</h2>
       {description && <p className="mt-1 text-sm text-ink-500">{description}</p>}
     </div>
   );

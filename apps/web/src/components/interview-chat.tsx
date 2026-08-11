@@ -133,14 +133,14 @@ export function InterviewChat({ meetingId, initial }: { meetingId: string; initi
       <div className="space-y-4">
         {error && <ErrorNotice message={error} />}
 
-        <div className="card space-y-3 p-4">
+        <div className="card space-y-3 p-5 sm:p-6">
           {interview.messages.map((message) => (
             <div
               key={message.id}
               className={
                 message.role === 'ASSISTANT'
-                  ? 'max-w-[85%] rounded-lg bg-ink-50 px-3.5 py-2.5 text-sm leading-relaxed'
-                  : 'ml-auto max-w-[85%] rounded-lg bg-accent-600 px-3.5 py-2.5 text-sm leading-relaxed text-white'
+                  ? 'max-w-[85%] animate-fade-up rounded-[1.25rem] rounded-tl-md bg-accent-50 px-4 py-3 text-sm leading-relaxed text-ink-700'
+                  : 'ml-auto max-w-[85%] animate-fade-up rounded-[1.25rem] rounded-tr-md bg-accent-600 px-4 py-3 text-sm leading-relaxed text-white shadow-[0_6px_18px_rgba(47,146,229,.2)]'
               }
             >
               {message.content}
