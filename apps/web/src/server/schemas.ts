@@ -201,10 +201,6 @@ export const startInterviewSchema = z.object({
   loadDefaultPreferences: z.boolean().default(false),
 });
 
-export const interviewMessageSchema = z.object({
-  content: z.string().min(1, '답변을 입력해 주세요.').max(1000),
-});
-
 /** 설문 형식 인터뷰. 전부 무응답을 허용한다. */
 export const surveyAnswersSchema = z.object({
   foodWant: z.string().max(500).optional(),

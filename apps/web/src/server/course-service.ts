@@ -104,12 +104,16 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
 
     const aggregated = await loadAggregatedPreferences(meeting.id);
     const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: meeting.id } });
-    // 검색어 1순위: 참가자가 직접 말한 구체적 키워드("보드게임카페" 등). 없으면 각 카테고리의
+    // 검색어 1순위: 참가자가 직접 말한 구체적 키워드("보드게임카페", "치킨" 등). 없으면 각 카테고리의
     // 대표 키워드 조합(2순위)으로 Provider가 알아서 대체한다.
+    const topFood = aggregated.preferredFoods[0]?.tag;
     const places = await getPlaceProvider().search({
       area: meeting.areaName,
       limit: 100,
-      categoryKeywords: aggregated.activityKeywords[0] ? { ACTIVITY: aggregated.activityKeywords[0] } : undefined,
+      categoryKeywords: {
+        ...(aggregated.activityKeywords[0] ? { ACTIVITY: aggregated.activityKeywords[0] } : {}),
+        ...(topFood ? { LUNCH: topFood, DINNER: topFood } : {}),
+      },
     });
 
     const generated = await generateWithValidation({

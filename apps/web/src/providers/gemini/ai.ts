@@ -1,6 +1,5 @@
 import {
   filterPlaces,
-  interviewPolicy,
   koreaTimeParts,
 } from '@oneulcourse/core';
 import type { CourseItemCategory, PlaceCandidate } from '@oneulcourse/core';
@@ -9,8 +8,6 @@ import type {
   CourseGenerationInput,
   GeneratedCourse,
   GeneratedCourseItem,
-  InterviewTurnInput,
-  InterviewTurnOutput,
   ItemRegenerationInput,
   PreferenceExtractionOutput,
 } from '@/providers/types';
@@ -26,14 +23,6 @@ import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_REQUEST_TIMEOUT_MS = 15_000;
-
-/** 인터뷰 질문은 매번 LLM에 묻지 않고 고정 문구를 쓴다 — 문맥 이해(취향 추출)만 Gemini가 담당한다. */
-const QUESTIONS = [
-  '먹고싶은 음식이나 먹기 싫은 음식을 알려주세요.',
-  '하고싶은 활동이나 하기 싫은 활동이 있나요? 가고싶은 장소는 링크나 사진을 첨부해도 좋아요.',
-  '1인 기준으로 생각하는 예산은 어느 정도인가요?',
-  '특별히 고려했으면 좋을 사항이 있으면 적어주세요 (알레르기, 반려견 동반, 이동 제약 등)',
-];
 
 const ACTIVITY_ENUM = ['WALK', 'EXHIBITION', 'SHOPPING', 'ACTIVITY', 'BAR', 'CAFE'];
 const ATMOSPHERE_ENUM = ['QUIET', 'CASUAL', 'TRENDY', 'SPECIAL'];
@@ -81,18 +70,6 @@ export class GeminiAiProvider implements AiProvider {
 
   private call<T>(systemInstruction: string, prompt: string, responseSchema: object): Promise<T> {
     return callGemini<T>({ apiKey: this.apiKey, model: this.model, systemInstruction, prompt, responseSchema });
-  }
-
-  async askNextQuestion(input: InterviewTurnInput): Promise<InterviewTurnOutput> {
-    const maxQuestions = Math.min(input.targetQuestionCount, interviewPolicy.maxTurns);
-    if (input.questionIndex >= maxQuestions) return { nextQuestion: null, isComplete: true };
-    if (input.userAnswer.trim().length < 2 && input.questionIndex > 0) {
-      return { nextQuestion: '조금만 더 자세히 알려주실 수 있을까요?', isComplete: false };
-    }
-    return {
-      nextQuestion: QUESTIONS[input.questionIndex] ?? null,
-      isComplete: input.questionIndex >= QUESTIONS.length,
-    };
   }
 
   async extractPreferences(
