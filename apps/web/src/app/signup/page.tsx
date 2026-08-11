@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { isKakaoLoginEnabled } from '@/lib/env';
 import { AuthForm } from '@/components/forms/auth-form';
+import { BrandLogo } from '@/components/brand-logo';
 
 export const metadata = { title: '회원가입' };
 
@@ -12,7 +13,8 @@ export default async function SignupPage() {
 
   return (
     <main className="container-page flex min-h-screen max-w-md flex-col justify-center py-16">
-      <Link href="/" className="mb-8 text-lg font-bold tracking-tight">
+      <Link href="/" className="mb-8 flex w-fit items-center gap-2.5 text-lg font-extrabold tracking-tight">
+        <BrandLogo size={42} priority />
         오늘코스
       </Link>
       <h1 className="mb-1 text-2xl font-bold tracking-tight">모두의 취향으로 코스를 만들어요</h1>

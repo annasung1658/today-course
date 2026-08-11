@@ -9,10 +9,16 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-white text-ink-900 antialiased;
+    @apply min-h-screen bg-accent-50 text-ink-900 antialiased;
+    background-image:
+      radial-gradient(circle at 8% 2%, rgba(126, 196, 250, 0.22), transparent 28rem),
+      radial-gradient(circle at 92% 18%, rgba(211, 238, 255, 0.7), transparent 24rem),
+      linear-gradient(180deg, #f8fcff 0%, #f3f9ff 45%, #ffffff 100%);
+    background-attachment: fixed;
     font-feature-settings: 'tnum' 0;
   }
 
@@ -33,29 +39,36 @@
   }
 
   .card {
-    @apply rounded-card border border-ink-100 bg-white;
+    @apply rounded-card border border-white/80 bg-white/90 shadow-card backdrop-blur-sm;
+    transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease, background-color 220ms ease;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold
-      transition-colors disabled:cursor-not-allowed disabled:opacity-45;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-bold
+      transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45;
+    transform: translateZ(0);
+  }
+
+  .btn:not(:disabled):active {
+    transform: scale(0.97);
   }
 
   .btn-primary {
-    @apply btn bg-accent-600 text-white hover:bg-accent-700;
+    @apply btn bg-accent-600 text-white shadow-[0_8px_20px_rgba(47,146,229,0.25)] hover:-translate-y-0.5 hover:bg-accent-700 hover:shadow-[0_12px_26px_rgba(47,146,229,0.32)];
   }
 
   .btn-secondary {
-    @apply btn border border-ink-200 bg-white text-ink-700 hover:bg-ink-50;
+    @apply btn border border-accent-100 bg-white text-ink-700 shadow-sm hover:-translate-y-0.5 hover:border-accent-500 hover:bg-accent-50;
   }
 
   .btn-ghost {
-    @apply btn text-ink-500 hover:bg-ink-50 hover:text-ink-900;
+    @apply btn text-ink-500 hover:bg-white/80 hover:text-accent-700;
   }
 
   .field {
-    @apply w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm text-ink-900
-      placeholder:text-ink-300 focus:border-accent-600;
+    @apply w-full rounded-2xl border border-ink-100 bg-white/90 px-4 py-3 text-sm text-ink-900 shadow-sm
+      outline-none placeholder:text-ink-300 focus:border-accent-500 focus:ring-4 focus:ring-accent-100/70;
+    transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
   }
 
   .label {
@@ -63,7 +76,15 @@
   }
 
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-200;
+  }
+
+  main > * {
+    animation: fade-up .45s cubic-bezier(.22,1,.36,1) both;
+  }
+
+  .card-interactive:hover {
+    @apply -translate-y-1 border-accent-100 shadow-lift;
   }
 }
 

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/cn';
+import { BrandLogo } from '@/components/brand-logo';
 
 /** 로딩·빈 상태·오류 상태를 한 곳에서 관리해 화면마다 다르게 보이지 않게 한다. */
 
@@ -12,7 +13,8 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+    <div className="card flex flex-col items-center gap-3 overflow-hidden px-6 py-14 text-center">
+      <BrandLogo size={56} decorative className="mb-1 shadow-sm" />
       <p className="text-base font-semibold text-ink-900">{title}</p>
       <p className="max-w-sm text-sm leading-relaxed text-ink-500">{description}</p>
       {action}
@@ -50,8 +52,8 @@ export function StatusChip({
 
 export function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-lg font-bold tracking-tight text-ink-900">{title}</h2>
+    <div className="mb-5">
+      <h2 className="text-xl font-bold tracking-tight text-ink-900">{title}</h2>
       {description && <p className="mt-1 text-sm text-ink-500">{description}</p>}
     </div>
   );

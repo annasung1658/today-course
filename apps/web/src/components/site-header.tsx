@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
+import { BrandLogo } from '@/components/brand-logo';
 
 /** 웹사이트용 상단 내비게이션. 모바일에서는 메뉴가 가로 스크롤된다. */
 export async function SiteHeader() {
@@ -10,9 +11,10 @@ export async function SiteHeader() {
     : 0;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-ink-100 bg-white/95 backdrop-blur">
-      <div className="container-page flex h-16 items-center justify-between gap-6">
-        <Link href="/" className="shrink-0 text-lg font-bold tracking-tight">
+    <header className="sticky top-0 z-40 border-b border-white/70 bg-white/75 shadow-[0_4px_24px_rgba(47,146,229,0.06)] backdrop-blur-xl">
+      <div className="container-page flex h-[4.5rem] items-center justify-between gap-5">
+        <Link href="/" className="group flex shrink-0 items-center gap-2.5 text-lg font-extrabold tracking-tight">
+          <BrandLogo size={40} priority className="shadow-[0_6px_16px_rgba(47,146,229,.2)] transition-transform group-hover:-rotate-3 group-hover:scale-105" />
           오늘코스
         </Link>
 
@@ -59,7 +61,7 @@ function HeaderLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
-      className="whitespace-nowrap rounded-lg px-3 py-2 font-medium text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-900"
+      className="whitespace-nowrap rounded-xl px-3 py-2 font-semibold text-ink-500 transition-all hover:bg-accent-50 hover:text-accent-700"
     >
       {children}
     </Link>
