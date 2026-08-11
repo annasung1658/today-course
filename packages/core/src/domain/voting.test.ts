@@ -6,6 +6,7 @@ import {
   decideFinalize,
   decideRegeneration,
   formatCountdown,
+  haveAllEligibleVoted,
   isCourseVotingOpen,
   isStaleVote,
   itemVotingPhase,
@@ -126,8 +127,8 @@ describe('재생성 판정', () => {
     expect(decideRegeneration({ ...base, dislikeCount: 2 })).toEqual({ action: 'NONE' });
   });
 
-  it('2회 재생성한 항목은 잠근다', () => {
-    expect(decideRegeneration({ ...base, dislikeCount: 4, regenerationCount: 2 })).toEqual({
+  it('3회 재생성한 항목은 잠근다', () => {
+    expect(decideRegeneration({ ...base, dislikeCount: 4, regenerationCount: 3 })).toEqual({
       action: 'LOCK',
       reason: 'MAX_REGENERATION_REACHED',
     });
@@ -142,6 +143,33 @@ describe('늦은 투표 차단', () => {
   it('버전이 다르면 STALE로 본다', () => {
     expect(isStaleVote(1, 2)).toBe(true);
     expect(isStaleVote(2, 2)).toBe(false);
+  });
+});
+
+describe('전원 투표 완료 판정', () => {
+  const eligible = ['u1', 'u2', 'u3'];
+
+  it('모든 대상자가 모든 항목에 투표하면 완료다', () => {
+    expect(
+      haveAllEligibleVoted(eligible, [
+        { voterUserIds: ['u1', 'u2', 'u3'] },
+        { voterUserIds: ['u3', 'u1', 'u2'] },
+      ]),
+    ).toBe(true);
+  });
+
+  it('한 항목이라도 한 사람의 표가 없으면 완료가 아니다', () => {
+    expect(
+      haveAllEligibleVoted(eligible, [
+        { voterUserIds: ['u1', 'u2', 'u3'] },
+        { voterUserIds: ['u1', 'u2'] },
+      ]),
+    ).toBe(false);
+  });
+
+  it('투표 대상자나 항목이 없으면 조기 확정하지 않는다', () => {
+    expect(haveAllEligibleVoted([], [{ voterUserIds: [] }])).toBe(false);
+    expect(haveAllEligibleVoted(eligible, [])).toBe(false);
   });
 });
 

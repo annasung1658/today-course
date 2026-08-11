@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | `initialWindowMinutes` | 60 | 1차 투표 창. **코스 생성 완료 시점** 기준 |
 | `revoteWindowMinutes` | 10 | 재생성된 항목의 재투표 창. 재생성 완료 시점 기준 |
-| `maxRegenerationPerItem` | 2 | 항목당 최대 재생성 횟수. 도달 시 `LOCKED` |
+| `maxRegenerationPerItem` | 3 | 항목당 최대 재생성 횟수. 도달 시 `LOCKED`, 광고 확인 후 초기화 가능 |
 | `finalizeGracePeriodSeconds` | 20 | 확정 직전 재생성이 진행 중일 때 기다려주는 시간 |
 | `endingSoonNoticeMinutes` | 3 | 종료 임박 알림 시점 |
 

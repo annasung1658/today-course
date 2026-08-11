@@ -126,6 +126,18 @@ export function isStaleVote(requestVersion: number, currentVersion: number): boo
   return requestVersion !== currentVersion;
 }
 
+/** 투표 대상자 전원이 현재 모든 투표 항목에 한 표씩 남겼는지 판정한다. */
+export function haveAllEligibleVoted(
+  eligibleUserIds: string[],
+  items: Array<{ voterUserIds: string[] }>,
+): boolean {
+  if (eligibleUserIds.length === 0 || items.length === 0) return false;
+  return items.every((item) => {
+    const voters = new Set(item.voterUserIds);
+    return eligibleUserIds.every((userId) => voters.has(userId));
+  });
+}
+
 export interface FinalizeInput {
   course: CourseVotingWindow;
   now: Date;

@@ -225,7 +225,7 @@ AI 결과는 세 단계 검증을 통과해야 저장됩니다.
       "revoteEndsAt": "2026-08-15T10:30:00.000Z",
       "remainingSeconds": 420,
       "regenerationCount": 1,
-      "maxRegenerationCount": 2
+      "maxRegenerationCount": 3
     }
   ]
 }
