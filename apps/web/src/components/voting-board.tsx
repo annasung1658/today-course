@@ -125,8 +125,10 @@ export function VotingBoard({
           points={state.items.map((item) => ({
             sequence: item.sequence,
             placeName: item.placeName,
+            address: item.address,
             latitude: item.latitude,
             longitude: item.longitude,
+            travelMinutesFromPrev: item.travelMinutesFromPrev,
           }))}
         />
 
