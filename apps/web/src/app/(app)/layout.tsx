@@ -1,4 +1,5 @@
 import { SiteHeader } from '@/components/site-header';
+import { GuestbookFloatingBall } from '@/components/guestbook-floating-ball';
 
 /** 로그인 이후 화면 공통 골격. 상단 GNB + 본문. */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -9,6 +10,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <footer className="border-t border-white/80 bg-white/45 py-7 backdrop-blur">
         <div className="container-page text-xs text-ink-300">오늘코스 · 모두의 취향으로 만드는 모임 코스</div>
       </footer>
+      <GuestbookFloatingBall />
     </div>
   );
 }

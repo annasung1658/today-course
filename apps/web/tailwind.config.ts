@@ -44,10 +44,18 @@ const config: Config = {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-6px)' },
         },
+        'bouncy-ball': {
+          '0%, 12%, 30%, 100%': { transform: 'translateY(0) scaleX(1) scaleY(1)' },
+          '6%': { transform: 'translateY(-18px) scaleX(.96) scaleY(1.04)' },
+          '16%': { transform: 'translateY(-10px) scaleX(.98) scaleY(1.02)' },
+          '23%': { transform: 'translateY(-5px)' },
+          '28%': { transform: 'translateY(0) scaleX(1.06) scaleY(.94)' },
+        },
       },
       animation: {
         'fade-up': 'fade-up .5s cubic-bezier(.22,1,.36,1) both',
         float: 'float 4s ease-in-out infinite',
+        'bouncy-ball': 'bouncy-ball 2.8s cubic-bezier(.25,.8,.35,1) infinite',
       },
     },
   },

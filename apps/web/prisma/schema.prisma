@@ -160,8 +160,21 @@ model User {
   feedbacks            Feedback[]
   notifications        Notification[]
   sentInvitations      Invitation[]         @relation("InvitationCreator")
+  guestbookEntries     GuestbookEntry[]
 
   @@index([deletedAt])
+}
+
+model GuestbookEntry {
+  id        String   @id @default(cuid())
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([authorId])
 }
 
 model Account {
