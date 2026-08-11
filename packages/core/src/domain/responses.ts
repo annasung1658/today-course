@@ -67,6 +67,8 @@ export interface ExtractedPreference {
   dislikedFoods: string[];
   allergies: string[];
   preferredActivities: string[];
+  /** "보드게임카페"처럼 사용자가 직접 말한 구체적 장소 키워드. 검색어 우선순위 1순위로 쓴다. */
+  activityKeywords: string[];
   preferredAtmospheres: string[];
   budget: { min: number; max: number; currency: string } | null;
   mustHave: string[];
@@ -81,6 +83,7 @@ export interface AggregatedPreference {
   /** 안전조건. 선호보다 항상 우선한다. */
   allergies: string[];
   preferredActivities: Array<{ tag: string; count: number }>;
+  activityKeywords: string[];
   preferredAtmospheres: Array<{ tag: string; count: number }>;
   /** 전원이 감당 가능한 교집합 예산 */
   budget: { min: number; max: number; currency: string } | null;
@@ -126,6 +129,7 @@ export function aggregatePreferences(inputs: ExtractedPreference[]): AggregatedP
     dislikedFoods: unionOf(inputs.map((i) => i.dislikedFoods)),
     allergies: unionOf(inputs.map((i) => i.allergies)),
     preferredActivities: tally(inputs.map((i) => i.preferredActivities)),
+    activityKeywords: unionOf(inputs.map((i) => i.activityKeywords)),
     preferredAtmospheres: tally(inputs.map((i) => i.preferredAtmospheres)),
     budget,
     mustHave: unionOf(inputs.map((i) => i.mustHave)),

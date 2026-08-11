@@ -368,6 +368,8 @@ model ExtractedPreference {
   dislikedFoods        String[]
   allergies            String[]
   preferredActivities  String[]
+  // "보드게임카페"처럼 사용자가 직접 말한 구체적 장소 키워드. 검색어 우선순위 1순위로 쓴다.
+  activityKeywords     String[] @default([])
   preferredAtmospheres String[]
   budgetMin            Int?
   budgetMax            Int?

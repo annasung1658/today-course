@@ -432,6 +432,7 @@ export async function loadAggregatedPreferences(meetingId: string) {
         dislikedFoods: i.extracted!.dislikedFoods,
         allergies: i.extracted!.allergies,
         preferredActivities: i.extracted!.preferredActivities,
+        activityKeywords: i.extracted!.activityKeywords,
         preferredAtmospheres: i.extracted!.preferredAtmospheres,
         budget:
           i.extracted!.budgetMin !== null && i.extracted!.budgetMax !== null

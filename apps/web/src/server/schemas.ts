@@ -50,6 +50,8 @@ export const extractedPreferenceSchema = z.object({
   dislikedFoods: z.array(z.string().max(40)).max(20),
   allergies: z.array(z.string().max(40)).max(20),
   preferredActivities: z.array(z.string().max(40)).max(20),
+  // "보드게임카페"처럼 사용자가 직접 말한 구체적 장소 키워드. 검색어 우선순위 1순위로 쓴다.
+  activityKeywords: z.array(z.string().max(60)).max(20).default([]),
   preferredAtmospheres: z.array(z.string().max(40)).max(20),
   budget: z
     .object({
@@ -196,6 +198,16 @@ export const startInterviewSchema = z.object({
 
 export const interviewMessageSchema = z.object({
   content: z.string().min(1, '답변을 입력해 주세요.').max(1000),
+});
+
+/** 설문 형식 인터뷰. 전부 무응답을 허용한다. */
+export const surveyAnswersSchema = z.object({
+  foodWant: z.string().max(500).optional(),
+  foodAvoid: z.string().max(500).optional(),
+  activityWant: z.string().max(500).optional(),
+  activityAvoid: z.string().max(500).optional(),
+  budget: z.string().max(200).optional(),
+  notes: z.string().max(500).optional(),
 });
 
 // ── 투표 ────────────────────────────────────────────────────────────

@@ -54,6 +54,8 @@ export async function startInterview(meetingId: string, userId: string, loadDefa
             dislikedFoods: pref.dislikedFoods,
             allergies: pref.allergies,
             preferredActivities: pref.preferredActivities,
+            // 장기 기본 설정엔 구체 키워드 입력란이 없어 빈 값으로 시작한다.
+            activityKeywords: [],
             preferredAtmospheres: pref.preferredAtmospheres,
             budgetMin: pref.budgetMin,
             budgetMax: pref.budgetMax,
@@ -133,6 +135,7 @@ export async function sendInterviewMessage(interviewId: string, userId: string, 
         dislikedFoods: extracted.dislikedFoods,
         allergies: extracted.allergies,
         preferredActivities: extracted.preferredActivities,
+        activityKeywords: extracted.activityKeywords,
         preferredAtmospheres: extracted.preferredAtmospheres,
         budgetMin: extracted.budget?.min ?? null,
         budgetMax: extracted.budget?.max ?? null,
@@ -146,6 +149,7 @@ export async function sendInterviewMessage(interviewId: string, userId: string, 
         dislikedFoods: extracted.dislikedFoods,
         allergies: extracted.allergies,
         preferredActivities: extracted.preferredActivities,
+        activityKeywords: extracted.activityKeywords,
         preferredAtmospheres: extracted.preferredAtmospheres,
         budgetMin: extracted.budget?.min ?? null,
         budgetMax: extracted.budget?.max ?? null,
@@ -169,6 +173,107 @@ export async function sendInterviewMessage(interviewId: string, userId: string, 
   return serializeInterview(updated);
 }
 
+const SURVEY_FIELDS: Array<[key: 'foodWant' | 'foodAvoid' | 'activityWant' | 'activityAvoid' | 'budget' | 'notes', question: string]> = [
+  ['foodWant', '먹고 싶은 음식'],
+  ['foodAvoid', '못 먹는 음식'],
+  ['activityWant', '하고 싶은 활동'],
+  ['activityAvoid', '하기 싫은 활동'],
+  ['budget', '1인 기준 예산'],
+  ['notes', '특별히 고려했으면 좋을 사항 (알레르기, 반려견 동반, 이동 제약 등)'],
+];
+
+const EMPTY_EXTRACTION = {
+  preferredFoods: [],
+  dislikedFoods: [],
+  allergies: [],
+  preferredActivities: [],
+  activityKeywords: [],
+  preferredAtmospheres: [],
+  budget: null,
+  mustHave: [],
+  mustAvoid: [],
+};
+
+/**
+ * 설문 형식 인터뷰. 질문마다 왕복하지 않고 한 번에 답변을 받아 Gemini도 한 번만 부른다.
+ * 전부 무응답이어도 제출할 수 있다 — 그 경우 취향 없이(중립) 코스 생성에 반영된다.
+ */
+export async function submitSurveyAnswers(
+  interviewId: string,
+  userId: string,
+  answers: Partial<Record<(typeof SURVEY_FIELDS)[number][0], string>>,
+) {
+  const interview = await prisma.aiInterview.findUnique({
+    where: { id: interviewId },
+    include: { meeting: true, messages: true },
+  });
+  if (!interview) throw apiError('RESOURCE_NOT_FOUND');
+  if (interview.userId !== userId) throw apiError('FORBIDDEN');
+  if (interview.status === 'SUBMITTED') throw apiError('ALREADY_PROCESSED', { reason: '이미 제출한 인터뷰입니다.' });
+  if (interview.meeting.responseDeadlineAt < new Date()) throw apiError('RESPONSE_DEADLINE_PASSED');
+
+  const answered = SURVEY_FIELDS.filter(([key]) => answers[key]?.trim());
+  const history = answered.flatMap(([key, question]) => [
+    { role: 'ASSISTANT' as const, content: question },
+    { role: 'USER' as const, content: answers[key]!.trim() },
+  ]);
+
+  // 전부 무응답이면 Gemini를 부를 필요도 없다 — 중립 취향으로 바로 저장한다.
+  const rawExtraction = history.length > 0 ? await getAiProvider().extractPreferences(history) : EMPTY_EXTRACTION;
+  const extracted = extractedPreferenceSchema.parse(rawExtraction);
+
+  const updated = await prisma.$transaction(async (tx: PrismaTx) => {
+    if (answered.length > 0) {
+      const baseTurn = interview.messages.length;
+      const rows = answered.flatMap(([key, question], i) => [
+        { interviewId, role: 'ASSISTANT' as const, content: question, turn: baseTurn + i * 2 },
+        { interviewId, role: 'USER' as const, content: answers[key]!.trim(), turn: baseTurn + i * 2 + 1 },
+      ]);
+      // 답변마다 순차로 create()하면 매번 DB 왕복이 생겨 pgbouncer 지연에서 트랜잭션
+      // 기본 제한시간(5초)을 넘기기 쉽다 — createMany로 한 번에 묶어서 쓴다.
+      await tx.interviewMessage.createMany({ data: rows });
+    }
+
+    await tx.extractedPreference.upsert({
+      where: { interviewId },
+      create: {
+        interviewId,
+        preferredFoods: extracted.preferredFoods,
+        dislikedFoods: extracted.dislikedFoods,
+        allergies: extracted.allergies,
+        preferredActivities: extracted.preferredActivities,
+        activityKeywords: extracted.activityKeywords,
+        preferredAtmospheres: extracted.preferredAtmospheres,
+        budgetMin: extracted.budget?.min ?? null,
+        budgetMax: extracted.budget?.max ?? null,
+        budgetCurrency: extracted.budget?.currency ?? 'KRW',
+        mustHave: extracted.mustHave,
+        mustAvoid: extracted.mustAvoid,
+      },
+      update: {
+        preferredFoods: extracted.preferredFoods,
+        dislikedFoods: extracted.dislikedFoods,
+        allergies: extracted.allergies,
+        preferredActivities: extracted.preferredActivities,
+        activityKeywords: extracted.activityKeywords,
+        preferredAtmospheres: extracted.preferredAtmospheres,
+        budgetMin: extracted.budget?.min ?? null,
+        budgetMax: extracted.budget?.max ?? null,
+        mustHave: extracted.mustHave,
+        mustAvoid: extracted.mustAvoid,
+      },
+    });
+
+    return tx.aiInterview.update({
+      where: { id: interviewId },
+      data: { status: 'READY_TO_SUBMIT', currentQuestion: interview.targetQuestionCount, turnCount: { increment: 1 } },
+      include: { messages: { orderBy: { turn: 'asc' } }, extracted: true },
+    });
+  });
+
+  return serializeInterview(updated);
+}
+
 export async function updateExtractedPreference(interviewId: string, userId: string, input: unknown) {
   const interview = await prisma.aiInterview.findUnique({ where: { id: interviewId } });
   if (!interview) throw apiError('RESOURCE_NOT_FOUND');
@@ -184,6 +289,7 @@ export async function updateExtractedPreference(interviewId: string, userId: str
       dislikedFoods: parsed.dislikedFoods,
       allergies: parsed.allergies,
       preferredActivities: parsed.preferredActivities,
+      activityKeywords: parsed.activityKeywords,
       preferredAtmospheres: parsed.preferredAtmospheres,
       budgetMin: parsed.budget?.min ?? null,
       budgetMax: parsed.budget?.max ?? null,
@@ -197,6 +303,7 @@ export async function updateExtractedPreference(interviewId: string, userId: str
       dislikedFoods: parsed.dislikedFoods,
       allergies: parsed.allergies,
       preferredActivities: parsed.preferredActivities,
+      activityKeywords: parsed.activityKeywords,
       preferredAtmospheres: parsed.preferredAtmospheres,
       budgetMin: parsed.budget?.min ?? null,
       budgetMax: parsed.budget?.max ?? null,
@@ -294,6 +401,7 @@ function serializeExtracted(extracted: PrismaRow) {
     dislikedFoods: extracted.dislikedFoods,
     allergies: extracted.allergies,
     preferredActivities: extracted.preferredActivities,
+    activityKeywords: extracted.activityKeywords,
     preferredAtmospheres: extracted.preferredAtmospheres,
     budget:
       extracted.budgetMin !== null && extracted.budgetMax !== null
