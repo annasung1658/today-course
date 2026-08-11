@@ -103,6 +103,25 @@ export interface MeetingDetail {
   }>;
   currentCourse: { courseId: string; status: string; votingEndsAt: string } | null;
   serverTime: string;
+  recordAccess: { available: boolean; writable: boolean; opensAt: string; closesAt: string };
+}
+
+export function meetingRecordWindow(scheduledStartAt: Date, now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(scheduledStartAt);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  const opensAt = new Date(Date.UTC(value('year'), value('month') - 1, value('day')) - 9 * 60 * 60_000);
+  const movesToPastAt = new Date(opensAt.getTime() + 24 * 60 * 60_000);
+  const closesAt = new Date(opensAt.getTime() + 3 * 24 * 60 * 60_000);
+  return {
+    opensAt,
+    movesToPastAt,
+    closesAt,
+    available: now >= opensAt,
+    writable: now >= opensAt && now < closesAt,
+    isPast: now >= movesToPastAt,
+  };
 }
 
 export async function getMeetingDetail(meetingId: string, userId: string): Promise<MeetingDetail> {
@@ -123,6 +142,9 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
   const me = meeting.participants.find((p: PrismaRow) => p.userId === userId);
   if (!me) throw apiError('FORBIDDEN');
 
+  const recordWindow = meetingRecordWindow(meeting.scheduledStartAt);
+  const effectiveStatus = meeting.status !== 'CANCELLED' && recordWindow.isPast ? 'COMPLETED' : meeting.status;
+
   return {
     id: meeting.id,
     title: meeting.title,
@@ -141,7 +163,7 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
     atmosphereDescription: meeting.atmosphereDescription,
     specialNotes: meeting.specialNotes,
     responseDeadlineAt: meeting.responseDeadlineAt.toISOString(),
-    status: meeting.status,
+    status: effectiveStatus,
     isHost: meeting.hostUserId === userId,
     host: meeting.host,
     fixedSchedules: meeting.fixedSchedules.map((f: PrismaRow) => ({
@@ -171,6 +193,12 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
         }
       : null,
     serverTime: new Date().toISOString(),
+    recordAccess: {
+      available: recordWindow.available,
+      writable: recordWindow.writable,
+      opensAt: recordWindow.opensAt.toISOString(),
+      closesAt: recordWindow.closesAt.toISOString(),
+    },
   };
 }
 
@@ -206,7 +234,7 @@ export async function listMyMeetings(userId: string, status?: string): Promise<M
     title: m.title,
     scheduledStartAt: m.scheduledStartAt.toISOString(),
     areaName: m.areaName,
-    status: m.status,
+    status: m.status !== 'CANCELLED' && meetingRecordWindow(m.scheduledStartAt).isPast ? 'COMPLETED' : m.status,
     isHost: m.hostUserId === userId,
     participantCount: m.participants.filter((p: PrismaRow) => p.status !== 'DECLINED').length,
     capacity: m.capacity,

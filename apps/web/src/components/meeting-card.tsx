@@ -13,7 +13,9 @@ const toneByStatus: Record<string, 'neutral' | 'accent' | 'good' | 'danger'> = {
 
 export function MeetingCard({ meeting }: { meeting: MeetingSummary }) {
   const href =
-    meeting.status === 'VOTING' && meeting.currentCourse
+    meeting.status === 'COMPLETED'
+      ? `/meetings/${meeting.id}/record`
+      : meeting.status === 'VOTING' && meeting.currentCourse
       ? `/courses/${meeting.currentCourse.courseId}/voting`
       : `/meetings/${meeting.id}`;
 
