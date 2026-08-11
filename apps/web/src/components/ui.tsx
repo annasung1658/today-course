@@ -1,4 +1,5 @@
 import { cn } from '@/lib/cn';
+import { BrandLogo } from '@/components/brand-logo';
 
 /** 로딩·빈 상태·오류 상태를 한 곳에서 관리해 화면마다 다르게 보이지 않게 한다. */
 
@@ -13,7 +14,7 @@ export function EmptyState({
 }) {
   return (
     <div className="card flex flex-col items-center gap-3 overflow-hidden px-6 py-14 text-center">
-      <span className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-50 text-2xl shadow-sm" aria-hidden>☁️</span>
+      <BrandLogo size={56} decorative className="mb-1 shadow-sm" />
       <p className="text-base font-semibold text-ink-900">{title}</p>
       <p className="max-w-sm text-sm leading-relaxed text-ink-500">{description}</p>
       {action}

@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth/session';
 import { listMyMeetings } from '@/server/meeting-service';
 import { EmptyState, SectionHeading } from '@/components/ui';
 import { MeetingCard } from '@/components/meeting-card';
+import { BrandLogo } from '@/components/brand-logo';
 
 export default async function HomePage() {
   const session = await getSession();
@@ -80,7 +81,7 @@ export default async function HomePage() {
 function Landing() {
   return (
     <div className="relative mx-auto max-w-3xl py-10 text-center sm:py-16">
-      <div className="animate-float mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-white text-4xl shadow-lift" aria-hidden>☁️</div>
+      <BrandLogo size={88} priority decorative className="animate-float mx-auto mb-6 shadow-lift" />
       <span className="chip border-accent-100 bg-white text-accent-700 shadow-sm">AI가 취향을 모아 코스로</span>
       <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-[-0.04em] sm:text-6xl">
         약속은 잡았는데,
