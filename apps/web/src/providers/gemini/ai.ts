@@ -1,12 +1,9 @@
 import {
-  aiPolicy,
   filterPlaces,
   interviewPolicy,
   koreaTimeParts,
-  validateFixedSchedulesPreserved,
-  validateItemTimeline,
 } from '@oneulcourse/core';
-import type { CourseItemCategory, DraftCourseItem, PlaceCandidate } from '@oneulcourse/core';
+import type { CourseItemCategory, PlaceCandidate } from '@oneulcourse/core';
 import type {
   AiProvider,
   CourseGenerationInput,
@@ -28,6 +25,7 @@ import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
  */
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_REQUEST_TIMEOUT_MS = 15_000;
 
 /** 인터뷰 질문은 매번 LLM에 묻지 않고 고정 문구를 쓴다 — 문맥 이해(취향 추출)만 Gemini가 담당한다. */
 const QUESTIONS = [
@@ -58,6 +56,7 @@ async function callGemini<T>(params: {
       contents: [{ role: 'user', parts: [{ text: params.prompt }] }],
       generationConfig: { responseMimeType: 'application/json', responseSchema: params.responseSchema },
     }),
+    signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Gemini API 오류 (${res.status}): ${await res.text()}`);
@@ -146,21 +145,9 @@ export class GeminiAiProvider implements AiProvider {
   }
 
   async generateCourse(input: CourseGenerationInput): Promise<GeneratedCourse> {
-    for (let attempt = 0; attempt < aiPolicy.maxValidationRetries; attempt += 1) {
-      const course = await this.tryGenerateCourse(input);
-      const draftItems: DraftCourseItem[] = course.items.map((item) => ({
-        sequence: item.sequence,
-        category: item.category,
-        startAt: item.startAt,
-        endAt: item.endAt,
-        placeId: item.placeId,
-        fixedScheduleId: item.fixedScheduleId,
-      }));
-      const fixedCheck = validateFixedSchedulesPreserved(draftItems, input.fixedSchedules);
-      const timelineCheck = validateItemTimeline(draftItems);
-      if (fixedCheck.valid && timelineCheck.valid) return course;
-    }
-    throw new Error('Gemini가 생성한 코스가 검증을 통과하지 못했습니다.');
+    // 검증과 재시도는 course-service 한 곳에서만 담당한다.
+    // 여기서 다시 반복하면 최대 N²번 Gemini를 호출해 서버리스 제한 시간을 초과한다.
+    return this.tryGenerateCourse(input);
   }
 
   /**
