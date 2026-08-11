@@ -291,7 +291,9 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
   if (!item || item.courseId !== courseId) throw apiError('RESOURCE_NOT_FOUND');
   await assertParticipant(item.course.meetingId, userId);
   if (item.course.status === 'CONFIRMED') throw apiError('VOTING_CLOSED');
-  if (item.status !== 'LOCKED' || item.regenerationCount < votingPolicy.maxRegenerationPerItem) {
+  // 기존 코스는 생성 당시의 최대 횟수(예: 2회)를 저장하고 있을 수 있다.
+  // 현재 전역 정책값이 아니라 이 항목에 실제 저장된 한도를 모두 썼는지 판단한다.
+  if (item.status !== 'LOCKED' || item.regenerationCount < item.maxRegenerationCount) {
     throw apiError('INVALID_MEETING_STATUS', { reason: '재생성 횟수를 모두 사용한 항목만 초기화할 수 있습니다.' });
   }
 
@@ -303,6 +305,7 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
         status: 'ACTIVE',
         regenerationCount: 0,
         maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+        generationVersion: { increment: 1 },
         revoteEndsAt: null,
       },
     });
@@ -312,6 +315,7 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
     courseItemId: reset.id,
     regenerationCount: reset.regenerationCount,
     maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+    generationVersion: reset.generationVersion,
     status: reset.status,
   };
 }

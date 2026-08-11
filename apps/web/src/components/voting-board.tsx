@@ -136,7 +136,34 @@ export function VotingBoard({
     setResetting(true);
     setError(null);
     try {
-      await apiFetch(`/courses/${state.courseId}/items/${adItem.courseItemId}/ad-reset`, { method: 'POST' });
+      const reset = await apiFetch<{
+        courseItemId: string;
+        regenerationCount: number;
+        maxRegenerationCount: number;
+        generationVersion: number;
+        status: string;
+      }>(`/courses/${state.courseId}/items/${adItem.courseItemId}/ad-reset`, { method: 'POST' });
+
+      // 재조회가 잠시 실패해도 광고 보상이 화면에 즉시 보이게 한다.
+      setState((current) => ({
+        ...current,
+        items: current.items.map((item) =>
+          item.courseItemId === reset.courseItemId
+            ? {
+                ...item,
+                regenerationCount: reset.regenerationCount,
+                maxRegenerationCount: reset.maxRegenerationCount,
+                generationVersion: reset.generationVersion,
+                status: reset.status,
+                myVote: null,
+                likeCount: 0,
+                dislikeCount: 0,
+                phase: 'INITIAL',
+                revoteEndsAt: null,
+              }
+            : item,
+        ),
+      }));
       setAdItem(null);
       await refresh();
     } catch (err) {
