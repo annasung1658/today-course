@@ -6,11 +6,15 @@ import { notify } from '@/server/notification-service';
 import type { z } from 'zod';
 import type { createMeetingSchema } from '@/server/schemas';
 import type { PrismaRow, PrismaTx } from '@/server/prisma-types';
+import { canScheduleMeeting, meetingRecordWindow } from '@/lib/meeting-lifecycle';
 
 /** 약속 생성·조회·초대. */
 
 export async function createMeeting(userId: string, input: z.infer<typeof createMeetingSchema>) {
   const now = new Date();
+  if (!canScheduleMeeting(input.scheduledStartAt, now)) {
+    throw apiError('VALIDATION_ERROR', { scheduledStartAt: '오늘 이전 날짜로는 약속을 만들 수 없습니다.' });
+  }
   const responseDeadlineAt = input.responseDeadlineAt ?? defaultResponseDeadline(now);
 
   const meeting = await prisma.$transaction(async (tx: PrismaTx) => {
@@ -104,24 +108,6 @@ export interface MeetingDetail {
   currentCourse: { courseId: string; status: string; votingEndsAt: string } | null;
   serverTime: string;
   recordAccess: { available: boolean; writable: boolean; opensAt: string; closesAt: string };
-}
-
-export function meetingRecordWindow(scheduledStartAt: Date, now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(scheduledStartAt);
-  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-  const opensAt = new Date(Date.UTC(value('year'), value('month') - 1, value('day')) - 9 * 60 * 60_000);
-  const movesToPastAt = new Date(opensAt.getTime() + 24 * 60 * 60_000);
-  const closesAt = new Date(opensAt.getTime() + 3 * 24 * 60 * 60_000);
-  return {
-    opensAt,
-    movesToPastAt,
-    closesAt,
-    available: now >= opensAt,
-    writable: now >= opensAt && now < closesAt,
-    isPast: now >= movesToPastAt,
-  };
 }
 
 export async function getMeetingDetail(meetingId: string, userId: string): Promise<MeetingDetail> {

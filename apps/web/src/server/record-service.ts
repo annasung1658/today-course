@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
 import { notify } from '@/server/notification-service';
 import type { PrismaRow } from '@/server/prisma-types';
-import { meetingRecordWindow } from '@/server/meeting-service';
+import { meetingRecordWindow } from '@/lib/meeting-lifecycle';
 
 /** 약속 후 기록. 작성자와 방장 권한을 구분한다. */
 

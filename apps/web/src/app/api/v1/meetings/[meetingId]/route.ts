@@ -4,6 +4,7 @@ import { authedRoute, readJson } from '@/lib/api/handler';
 import { updateMeetingSchema } from '@/server/schemas';
 import { getMeetingDetail } from '@/server/meeting-service';
 import { getStorageProvider } from '@/providers';
+import { meetingRemovalScope } from '@/lib/meeting-lifecycle';
 
 export const GET = authedRoute<{ meetingId: string }, unknown>(async ({ params, session }) =>
   getMeetingDetail(params.meetingId, session.userId),
@@ -36,7 +37,7 @@ export const DELETE = authedRoute<{ meetingId: string }, unknown>(async ({ param
     const participant = await prisma.participant.findUnique({
       where: { meetingId_userId: { meetingId: params.meetingId, userId: session.userId } },
     });
-    if (!participant || participant.status === 'DECLINED') throw apiError('FORBIDDEN');
+    if (!participant || meetingRemovalScope(false, participant.status) === 'FORBIDDEN') throw apiError('FORBIDDEN');
     await prisma.participant.update({ where: { id: participant.id }, data: { status: 'DECLINED' } });
     return { id: params.meetingId, deleted: true, scope: 'MEMBER_ONLY' };
   }
