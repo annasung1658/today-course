@@ -50,7 +50,7 @@ export const interviewPolicy = {
 
 export const aiPolicy = {
   /** 스키마 검증 실패 시 재생성 시도 횟수. */
-  maxValidationRetries: 3,
+  maxValidationRetries: 5,
   /** 한 코스에 담기는 항목 수 범위. */
   minCourseItems: 3,
   maxCourseItems: 6,

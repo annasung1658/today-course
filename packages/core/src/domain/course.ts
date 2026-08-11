@@ -60,13 +60,39 @@ function toMinutes(hhmm: string): number {
   return Number(h) * 60 + Number(m);
 }
 
+const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/**
+ * 이 서비스는 항상 한국 시간 기준으로 영업시간·모임 시간대를 판단해야 하는데,
+ * Date.getHours()/getDay()는 실행 환경의 시스템 시간대를 따른다 — 로컬 개발 환경은
+ * 우연히 KST라 문제가 안 보이지만, Vercel 서버리스는 기본이 UTC라 9시간 차이로
+ * "오후 약속"이 "새벽"으로 판정되는 버그가 있었다. 그래서 항상 한국 시간대로 명시 계산한다.
+ */
+export function koreaTimeParts(date: Date): { hour: number; minute: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+    weekday: 'short',
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    hour: Number(map.hour) % 24,
+    minute: Number(map.minute),
+    day: WEEKDAY_INDEX[map.weekday!] ?? date.getDay(),
+  };
+}
+
 function isOpenDuring(place: PlaceCandidate, startAt: Date, endAt: Date): boolean {
-  const hours = place.openingHours[startAt.getDay()];
+  const startParts = koreaTimeParts(startAt);
+  const endParts = koreaTimeParts(endAt);
+  const hours = place.openingHours[startParts.day];
   if (!hours) return false; // 휴무일이거나 정보 없음 → 추천하지 않는다.
   const open = toMinutes(hours.open);
   const close = toMinutes(hours.close);
-  const start = startAt.getHours() * 60 + startAt.getMinutes();
-  const end = endAt.getHours() * 60 + endAt.getMinutes();
+  const start = startParts.hour * 60 + startParts.minute;
+  const end = endParts.hour * 60 + endParts.minute;
   // 새벽까지 여는 가게(close < open)는 자정을 넘긴 것으로 본다.
   const closeAdjusted = close < open ? close + 24 * 60 : close;
   const endAdjusted = end < start ? end + 24 * 60 : end;

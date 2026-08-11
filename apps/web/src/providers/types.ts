@@ -25,6 +25,8 @@ export interface PreferenceExtractionOutput {
   dislikedFoods: string[];
   allergies: string[];
   preferredActivities: string[];
+  /** "보드게임카페"처럼 사용자가 직접 말한 구체적 장소 키워드. 검색어 우선순위 1순위로 쓴다. */
+  activityKeywords: string[];
   preferredAtmospheres: string[];
   budget: { min: number; max: number; currency: string } | null;
   mustHave: string[];
@@ -102,6 +104,11 @@ export interface PlaceSearchQuery {
   category?: CourseItemCategory;
   query?: string;
   limit?: number;
+  /**
+   * category를 지정하지 않고 카테고리별로 한 번에 후보를 모을 때(코스 생성 초기 단계),
+   * 카테고리별로 우선 쓸 구체적 검색어. 없으면 각 Provider의 대표 키워드로 대체한다.
+   */
+  categoryKeywords?: Partial<Record<CourseItemCategory, string>>;
 }
 
 export interface PlaceProvider {

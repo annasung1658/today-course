@@ -11,6 +11,7 @@ import { MockAiProvider } from './mock/ai';
 import { MockPlaceProvider, MockRouteProvider } from './mock/place';
 import { DisabledKakaoAuthProvider, MockNotificationProvider, MockStorageProvider } from './mock/misc';
 import { KakaoAuthProvider } from './kakao/auth';
+import { KakaoPlaceProvider } from './kakao/place';
 import { GeminiAiProvider } from './gemini/ai';
 
 /**
@@ -35,7 +36,11 @@ export function getAiProvider(): AiProvider {
 }
 
 export function getPlaceProvider(): PlaceProvider {
-  if (!placeSingleton) placeSingleton = new MockPlaceProvider();
+  if (!placeSingleton) {
+    placeSingleton = env.KAKAO_REST_API_KEY
+      ? new KakaoPlaceProvider(env.KAKAO_REST_API_KEY)
+      : new MockPlaceProvider();
+  }
   return placeSingleton;
 }
 

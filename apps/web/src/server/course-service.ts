@@ -88,7 +88,13 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
 
     const aggregated = await loadAggregatedPreferences(meeting.id);
     const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: meeting.id } });
-    const places = await getPlaceProvider().search({ area: meeting.areaName, limit: 100 });
+    // 검색어 1순위: 참가자가 직접 말한 구체적 키워드("보드게임카페" 등). 없으면 각 카테고리의
+    // 대표 키워드 조합(2순위)으로 Provider가 알아서 대체한다.
+    const places = await getPlaceProvider().search({
+      area: meeting.areaName,
+      limit: 100,
+      categoryKeywords: aggregated.activityKeywords[0] ? { ACTIVITY: aggregated.activityKeywords[0] } : undefined,
+    });
 
     const generated = await generateWithValidation({
       meeting: {
@@ -179,6 +185,8 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
 
     await notify.votingStarted(meeting.id, course.id, votingPolicy.initialWindowMinutes);
   } catch (error) {
+    // 실패 사유가 AiJob.errorMessage에는 남지만 콘솔엔 안 남아서 로그로 원인을 못 찾았다 — 로그에도 남긴다.
+    console.error('[course-generation] failed', { jobId, meetingId: job.meetingId, error });
     await prisma.aiJob.update({
       where: { id: jobId },
       data: {

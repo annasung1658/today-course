@@ -1,4 +1,4 @@
-import { interviewPolicy, filterPlaces } from '@oneulcourse/core';
+import { interviewPolicy, filterPlaces, koreaTimeParts } from '@oneulcourse/core';
 import type { CourseItemCategory, PlaceCandidate, AggregatedPreference } from '@oneulcourse/core';
 import type {
   AiProvider,
@@ -113,6 +113,8 @@ export function extractFromText(text: string): PreferenceExtractionOutput {
     dislikedFoods: [...dislikedFoods],
     allergies: [...allergies],
     preferredActivities: [...preferredActivities],
+    // 규칙 기반 Mock은 구체적 키워드를 따로 못 뽑아내니 비워둔다(Gemini만 지원).
+    activityKeywords: [],
     preferredAtmospheres: [...preferredAtmospheres],
     budget: extractBudget(text),
     mustHave: [...mustHave],
@@ -290,7 +292,7 @@ type Slot =
 
 /** 약속 시간대와 취향을 보고 코스 뼈대를 짠다. 픽스 일정은 시간 순서대로 끼워 넣는다. */
 function planCategories(input: CourseGenerationInput): Slot[] {
-  const startHour = input.meeting.scheduledStartAt.getHours();
+  const startHour = koreaTimeParts(input.meeting.scheduledStartAt).hour;
   const activityTags = input.aggregated.preferredActivities.map((a) => a.tag);
 
   const base: Slot[] = [];
