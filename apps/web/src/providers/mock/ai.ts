@@ -1,12 +1,10 @@
-import { interviewPolicy, filterPlaces, koreaTimeParts } from '@oneulcourse/core';
+import { filterPlaces, koreaTimeParts } from '@oneulcourse/core';
 import type { CourseItemCategory, PlaceCandidate, AggregatedPreference } from '@oneulcourse/core';
 import type {
   AiProvider,
   CourseGenerationInput,
   GeneratedCourse,
   GeneratedCourseItem,
-  InterviewTurnInput,
-  InterviewTurnOutput,
   ItemRegenerationInput,
   PreferenceExtractionOutput,
 } from '@/providers/types';
@@ -17,13 +15,6 @@ import { MockPlaceProvider, MockRouteProvider } from './place';
  * 실제 Provider와 완전히 같은 인터페이스·출력 스키마를 지키므로
  * 키만 넣으면 그대로 교체된다.
  */
-
-const QUESTIONS = [
-  '먹고싶은 음식이나 먹기 싫은 음식을 알려주세요.',
-  '하고싶은 활동이나 하기 싫은 활동이 있나요? 가고싶은 장소는 링크나 사진을 첨부해도 좋아요.',
-  '1인 기준으로 생각하는 예산은 어느 정도인가요?',
-  '특별히 고려했으면 좋을 사항이 있으면 적어주세요 (알레르기, 반려견 동반, 이동 제약 등)',
-];
 
 /** 한국어 표현 → 태그 사전. 실제 모델의 Structured Output을 흉내 낸다. */
 const FOOD_TAGS: Array<[RegExp, string]> = [
@@ -145,18 +136,6 @@ export class MockAiProvider implements AiProvider {
   readonly name = 'mock-ai';
   private places = new MockPlaceProvider();
   private routes = new MockRouteProvider();
-
-  async askNextQuestion(input: InterviewTurnInput): Promise<InterviewTurnOutput> {
-    const next = input.questionIndex; // 0-based로 다음 질문
-    if (next >= Math.min(input.targetQuestionCount, interviewPolicy.maxTurns)) {
-      return { nextQuestion: null, isComplete: true };
-    }
-    // 답이 너무 짧으면 한 번 더 물어본다.
-    if (input.userAnswer.trim().length < 2 && next > 0) {
-      return { nextQuestion: '조금만 더 자세히 알려주실 수 있을까요?', isComplete: false };
-    }
-    return { nextQuestion: QUESTIONS[next] ?? null, isComplete: next >= QUESTIONS.length };
-  }
 
   async extractPreferences(
     history: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>,

@@ -8,18 +8,6 @@ import type { CourseItemCategory, PlaceCandidate, AggregatedPreference } from '@
 
 // ── AI ──────────────────────────────────────────────────────────────
 
-export interface InterviewTurnInput {
-  questionIndex: number;
-  targetQuestionCount: number;
-  history: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>;
-  userAnswer: string;
-}
-
-export interface InterviewTurnOutput {
-  nextQuestion: string | null;
-  isComplete: boolean;
-}
-
 export interface PreferenceExtractionOutput {
   preferredFoods: string[];
   dislikedFoods: string[];
@@ -91,7 +79,6 @@ export interface ItemRegenerationInput {
 
 export interface AiProvider {
   readonly name: string;
-  askNextQuestion(input: InterviewTurnInput): Promise<InterviewTurnOutput>;
   extractPreferences(history: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>): Promise<PreferenceExtractionOutput>;
   generateCourse(input: CourseGenerationInput): Promise<GeneratedCourse>;
   regenerateItem(input: ItemRegenerationInput): Promise<GeneratedCourseItem>;
