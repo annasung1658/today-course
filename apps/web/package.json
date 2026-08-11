@@ -23,6 +23,7 @@
   "dependencies": {
     "@oneulcourse/core": "*",
     "@prisma/client": "6.10.1",
+    "@prisma/extension-accelerate": "^3.0.1",
     "bcryptjs": "3.0.2",
     "clsx": "2.1.1",
     "date-fns": "4.1.0",
