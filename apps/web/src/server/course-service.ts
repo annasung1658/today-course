@@ -107,11 +107,14 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
     // 검색어 1순위: 참가자가 직접 말한 구체적 키워드("보드게임카페", "치킨" 등). 없으면 각 카테고리의
     // 대표 키워드 조합(2순위)으로 Provider가 알아서 대체한다.
     const topFood = aggregated.preferredFoods[0]?.tag;
+    const topActivityKeyword = aggregated.activityKeywords[0];
     const places = await getPlaceProvider().search({
       area: meeting.areaName,
       limit: 100,
       categoryKeywords: {
-        ...(aggregated.activityKeywords[0] ? { ACTIVITY: aggregated.activityKeywords[0] } : {}),
+        // "잠실 롯데백화점"처럼 구체적인 장소명은 SHOPPING으로 분류되는 경우가 많아
+        // ACTIVITY와 함께 SHOPPING에도 같은 키워드를 적용한다.
+        ...(topActivityKeyword ? { ACTIVITY: topActivityKeyword, SHOPPING: topActivityKeyword } : {}),
         ...(topFood ? { LUNCH: topFood, DINNER: topFood } : {}),
       },
     });

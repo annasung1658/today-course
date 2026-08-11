@@ -259,12 +259,15 @@ export class GeminiAiProvider implements AiProvider {
         '슬롯 순서와 카테고리는 이미 정해져 있으니 바꾸지 마. ' +
         '하루 전체 흐름을 보고 골라 — 예를 들어 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
         '비선호 음식과 겹치는 후보는 이름에서 확실히 드러나는 경우 피해줘. ' +
+        '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 ' +
+        '포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘. ' +
         '마지막으로 이 코스 전체에 어울리는 제목과 1문장 소개도 한국어로 지어줘.',
       `지역: ${input.meeting.areaName}\n` +
         `분위기 태그: ${input.meeting.atmosphereTags.join(', ') || '없음'}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
         `비선호 음식: ${aggregated.dislikedFoods.join(', ') || '없음'}\n` +
         `선호 분위기: ${aggregated.preferredAtmospheres.map((a) => a.tag).join(', ') || '없음'}\n` +
+        `참가자가 구체적으로 말한 장소/키워드: ${aggregated.activityKeywords.join(', ') || '없음'}\n` +
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n\n` +
         `${slotsText}`,
       {
@@ -344,11 +347,13 @@ export class GeminiAiProvider implements AiProvider {
       '너는 모임 코스에 들어갈 장소 하나를 후보 목록 중에서 고르는 어드바이저야. ' +
         '반드시 후보 목록에 있는 placeId 중 하나만 골라야 해. 목록에 없는 placeId를 만들어내면 안 돼. ' +
         '비선호 음식은 장소 이름에서 유추할 수 있는 만큼만 판단해서, 확실히 겹치는 후보는 되도록 피해줘 ' +
-        '(예: 비선호 음식이 "곱창"이면 이름에 곱창이 들어간 후보는 피하고, 애매하면 무리해서 배제하지 않아도 돼).',
+        '(예: 비선호 음식이 "곱창"이면 이름에 곱창이 들어간 후보는 피하고, 애매하면 무리해서 배제하지 않아도 돼). ' +
+        '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘.',
       `지역: ${areaName}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
         `비선호 음식: ${aggregated.dislikedFoods.join(', ') || '없음'}\n` +
         `선호 분위기: ${aggregated.preferredAtmospheres.map((a) => a.tag).join(', ') || '없음'}\n` +
+        `참가자가 구체적으로 말한 장소/키워드: ${aggregated.activityKeywords.join(', ') || '없음'}\n` +
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n` +
         (neighbours
           ? `이전 장소: ${neighbours.previousPlaceName ?? '없음'}, 다음 장소: ${neighbours.nextPlaceName ?? '없음'}\n`
