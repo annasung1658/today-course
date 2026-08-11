@@ -28,6 +28,14 @@ import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+/** 인터뷰 질문은 매번 LLM에 묻지 않고 고정 문구를 쓴다 — 문맥 이해(취향 추출)만 Gemini가 담당한다. */
+const QUESTIONS = [
+  '먹고싶은 음식이나 먹기 싫은 음식을 알려주세요.',
+  '하고싶은 활동이나 하기 싫은 활동이 있나요? 가고싶은 장소는 링크나 사진을 첨부해도 좋아요.',
+  '1인 기준으로 생각하는 예산은 어느 정도인가요?',
+  '특별히 고려했으면 좋을 사항이 있으면 적어주세요 (알레르기, 반려견 동반, 이동 제약 등)',
+];
+
 const FOOD_ENUM = ['JAPANESE', 'KOREAN', 'CHINESE', 'WESTERN', 'SNACK', 'ASIAN'];
 const ACTIVITY_ENUM = ['WALK', 'EXHIBITION', 'SHOPPING', 'ACTIVITY', 'BAR', 'CAFE'];
 const ATMOSPHERE_ENUM = ['QUIET', 'CASUAL', 'TRENDY', 'SPECIAL'];
@@ -82,21 +90,10 @@ export class GeminiAiProvider implements AiProvider {
     if (input.userAnswer.trim().length < 2 && input.questionIndex > 0) {
       return { nextQuestion: '조금만 더 자세히 알려주실 수 있을까요?', isComplete: false };
     }
-
-    const history = input.history.map((m) => `${m.role === 'USER' ? '참가자' : '진행자'}: ${m.content}`).join('\n');
-    return this.call<InterviewTurnOutput>(
-      '너는 모임 앱 "오늘코스"에서 참가자의 취향을 파악하는 인터뷰 진행자야. ' +
-        '음식 취향, 활동/장소, 예산, 알레르기·이동 제약 같은 정보를 자연스러운 한국어 질문으로 물어봐. ' +
-        `총 질문은 ${maxQuestions}개를 넘기지 마.`,
-      `지금까지 대화:\n${history || '(아직 없음)'}\n\n` +
-        `방금 답변: "${input.userAnswer}"\n` +
-        `이번이 ${input.questionIndex + 1}번째 질문 차례야. 다음 질문을 만들거나, 이미 충분하면 isComplete를 true로 해줘.`,
-      {
-        type: 'OBJECT',
-        properties: { nextQuestion: { type: 'STRING', nullable: true }, isComplete: { type: 'BOOLEAN' } },
-        required: ['isComplete'],
-      },
-    );
+    return {
+      nextQuestion: QUESTIONS[input.questionIndex] ?? null,
+      isComplete: input.questionIndex >= QUESTIONS.length,
+    };
   }
 
   async extractPreferences(
@@ -337,11 +334,26 @@ function planCategories(input: CourseGenerationInput): Slot[] {
     base.push({ kind: 'PLACE', category: 'DINNER', durationMinutes: 90 });
   }
 
-  if (activityTags.includes('EXHIBITION')) base.push({ kind: 'PLACE', category: 'EXHIBITION', durationMinutes: 60 });
-  if (activityTags.includes('WALK') || activityTags.length === 0)
-    base.push({ kind: 'PLACE', category: 'WALK', durationMinutes: 50 });
-  if (activityTags.includes('SHOPPING')) base.push({ kind: 'PLACE', category: 'SHOPPING', durationMinutes: 50 });
-  if (activityTags.includes('BAR')) base.push({ kind: 'PLACE', category: 'BAR', durationMinutes: 90 });
+  let extraAdded = false;
+  if (activityTags.includes('EXHIBITION')) {
+    base.push({ kind: 'PLACE', category: 'EXHIBITION', durationMinutes: 60 });
+    extraAdded = true;
+  }
+  if (activityTags.includes('SHOPPING')) {
+    base.push({ kind: 'PLACE', category: 'SHOPPING', durationMinutes: 50 });
+    extraAdded = true;
+  }
+  if (activityTags.includes('BAR')) {
+    base.push({ kind: 'PLACE', category: 'BAR', durationMinutes: 90 });
+    extraAdded = true;
+  }
+  if (activityTags.includes('ACTIVITY')) {
+    base.push({ kind: 'PLACE', category: 'ACTIVITY', durationMinutes: 60 });
+    extraAdded = true;
+  }
+  // 위 태그 중 아무것도 안 걸렸으면(예: CAFE만 선호) 최소 코스 개수(aiPolicy.minCourseItems)를
+  // 못 채우니 산책을 기본값으로 넣는다.
+  if (activityTags.includes('WALK') || !extraAdded) base.push({ kind: 'PLACE', category: 'WALK', durationMinutes: 50 });
 
   const fixedSlots: Slot[] = input.fixedSchedules.map((fixed) => ({ kind: 'FIXED', fixed }));
   return [...base, ...fixedSlots].sort((a, b) => {

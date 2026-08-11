@@ -11,7 +11,7 @@ import type { PrismaRow, PrismaTx } from '@/server/prisma-types';
  * 방장과 다른 참여자에게는 제출 여부만 보인다.
  */
 
-const FIRST_QUESTION = '이번 모임에서 먹고 싶은 음식과 피하고 싶은 음식을 알려주세요.';
+const FIRST_QUESTION = '먹고싶은 음식이나 먹기 싫은 음식을 알려주세요.';
 
 export async function startInterview(meetingId: string, userId: string, loadDefaults: boolean) {
   const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });

@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
 import {
@@ -247,10 +248,14 @@ export async function castVote(input: CastVoteInput) {
   });
 
   // 트랜잭션 밖에서 실제 재생성을 돌린다. 실패해도 투표는 이미 저장되어 있다.
+  // 서버리스 환경은 응답을 보내는 즉시 인스턴스를 얼릴 수 있어, after()로 응답 이후에도
+  // 이 작업이 끝날 때까지 실행이 보장되게 한다(안 그러면 QUEUED에서 영영 안 돈다).
   if (result.regenerationTriggered) {
-    void runItemRegeneration(input.itemId).catch((error) => {
-      console.error('[regeneration] failed', error);
-    });
+    after(() =>
+      runItemRegeneration(input.itemId).catch((error) => {
+        console.error('[regeneration] failed', error);
+      }),
+    );
   }
 
   return result;

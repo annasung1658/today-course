@@ -5,6 +5,7 @@ import { getMeetingDetail } from '@/server/meeting-service';
 import { formatDate, formatDateTime, formatTime, meetingStatusLabels, participantStatusLabels } from '@/lib/format';
 import { SectionHeading, StatusChip } from '@/components/ui';
 import { InviteLink } from '@/components/invite-link';
+import { CourseGenerationButton, GeneratingWatcher } from '@/components/course-generation-button';
 
 interface PageProps {
   params: Promise<{ meetingId: string }>;
@@ -78,6 +79,16 @@ export default async function MeetingDetailPage({ params }: PageProps) {
           <SectionHeading title="친구 초대하기" description="링크를 받은 사람은 로그인 후 참여할 수 있어요." />
           <InviteLink meetingId={meeting.id} />
         </section>
+      )}
+
+      {meeting.isHost && ['INVITING', 'COLLECTING_RESPONSES'].includes(meeting.status) && submitted > 0 && (
+        <CourseGenerationButton meetingId={meeting.id} allResponded={submitted === total} />
+      )}
+
+      {meeting.status === 'GENERATING' && <GeneratingWatcher />}
+
+      {meeting.status === 'GENERATION_FAILED' && meeting.isHost && (
+        <CourseGenerationButton meetingId={meeting.id} allResponded={submitted === total} />
       )}
 
       <section>

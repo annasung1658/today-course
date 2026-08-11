@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
 import { aiPolicy, votingPolicy, calcVotingEndsAt, decideFinalize, validateFixedSchedulesPreserved, validateItemTimeline, closeResponses, eligibleVoterCount } from '@oneulcourse/core';
@@ -60,7 +61,9 @@ export async function queueCourseGeneration(meetingId: string) {
     data: { meetingId, type: 'COURSE_GENERATION', status: 'QUEUED' },
   });
 
-  void runCourseGeneration(job.id).catch((error) => console.error('[course-generation] failed', error));
+  // 서버리스 환경은 응답을 보내는 즉시 인스턴스를 얼릴 수 있어, after()로 응답 이후에도
+  // 이 작업이 끝날 때까지 실행이 보장되게 한다(안 그러면 QUEUED에서 영영 안 돈다).
+  after(() => runCourseGeneration(job.id).catch((error) => console.error('[course-generation] failed', error)));
   return job;
 }
 
@@ -194,7 +197,14 @@ async function generateWithValidation(input: Parameters<ReturnType<typeof getAiP
   let lastError = '';
 
   for (let attempt = 1; attempt <= aiPolicy.maxValidationRetries; attempt += 1) {
-    const raw = await getAiProvider().generateCourse(input);
+    let raw: Awaited<ReturnType<ReturnType<typeof getAiProvider>['generateCourse']>>;
+    try {
+      raw = await getAiProvider().generateCourse(input);
+    } catch (err) {
+      // Gemini 호출 자체가 실패해도(네트워크, 파싱 등) 검증 실패와 똑같이 다음 시도로 넘어간다.
+      lastError = err instanceof Error ? err.message : String(err);
+      continue;
+    }
     const parsed = generatedCourseSchema.safeParse(raw);
     if (!parsed.success) {
       lastError = `스키마 검증 실패: ${parsed.error.issues[0]?.message ?? ''}`;
