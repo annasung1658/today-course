@@ -337,7 +337,23 @@ export async function declineInvitation(inviteCode: string, userId: string) {
 export async function inviteNotification(meetingId: string, userId: string) {
   const meeting = await prisma.meeting.findUnique({
     where: { id: meetingId },
-    include: { host: { select: { nickname: true } } },
+    include: {
+      host: { select: { nickname: true } },
+      invitations: {
+        where: { status: 'ACTIVE', expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { inviteCode: true },
+      },
+    },
   });
-  if (meeting) await notify.invited(userId, meetingId, meeting.title, meeting.host.nickname);
+  if (meeting) {
+    await notify.invited(
+      userId,
+      meetingId,
+      meeting.title,
+      meeting.host.nickname,
+      meeting.invitations[0]?.inviteCode,
+    );
+  }
 }

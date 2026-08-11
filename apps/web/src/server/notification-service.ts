@@ -50,14 +50,15 @@ async function participantUserIds(meetingId: string): Promise<string[]> {
 }
 
 export const notify = {
-  async invited(userId: string, meetingId: string, meetingTitle: string, hostNickname: string) {
+  async invited(userId: string, meetingId: string, meetingTitle: string, hostNickname: string, inviteCode?: string) {
     await create({
       userIds: [userId],
       type: 'MEETING_INVITED',
       title: '약속에 초대받았어요',
       body: `${hostNickname}님이 "${meetingTitle}"에 초대했어요.`,
       meetingId,
-      linkUrl: `/meetings/${meetingId}`,
+      // 초대 알림은 약속 상세가 아니라 봉투가 펼쳐지는 초대장 화면으로 보낸다.
+      linkUrl: inviteCode ? `/invite/${inviteCode}` : `/meetings/${meetingId}`,
     });
   },
 
