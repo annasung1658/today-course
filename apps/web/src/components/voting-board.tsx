@@ -56,6 +56,8 @@ interface VotingState {
 }
 
 const POLL_INTERVAL_MS = 4000;
+const AD_VIEW_SECONDS = 15;
+const AD_DESTINATION_URL = 'https://www.squidtrip.co.kr/';
 
 export function VotingBoard({
   initialState,
@@ -69,6 +71,7 @@ export function VotingBoard({
   const [error, setError] = useState<string | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [adItem, setAdItem] = useState<VotingItem | null>(null);
+  const [adSecondsRemaining, setAdSecondsRemaining] = useState(AD_VIEW_SECONDS);
   const [resetting, setResetting] = useState(false);
 
   const courseRemaining = useServerCountdown(state.endsAt, state.serverTime);
@@ -88,6 +91,19 @@ export function VotingBoard({
     const timer = window.setInterval(refresh, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!adItem || adSecondsRemaining <= 0) return;
+    const timer = window.setTimeout(() => {
+      setAdSecondsRemaining((remaining) => Math.max(0, remaining - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [adItem, adSecondsRemaining]);
+
+  const openAd = (item: VotingItem) => {
+    setAdSecondsRemaining(AD_VIEW_SECONDS);
+    setAdItem(item);
+  };
 
   const vote = async (item: VotingItem, value: 'LIKE' | 'DISLIKE') => {
     setError(null);
@@ -160,7 +176,7 @@ export function VotingBoard({
             revoteWindowMinutes={state.revoteWindowMinutes}
             disabled={closed || pendingItemId === item.courseItemId}
             onVote={vote}
-            onWatchAd={setAdItem}
+            onWatchAd={openAd}
           />
         ))}
       </div>
@@ -175,44 +191,33 @@ export function VotingBoard({
       </div>
 
       {adItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/35 p-4 backdrop-blur-sm">
-          <div
-            className="w-full max-w-sm overflow-hidden rounded-[2rem] bg-white shadow-[0_24px_80px_rgba(15,40,70,.28)]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ad-title"
-          >
-            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
-              <div>
-                <p className="text-xs font-bold text-accent-600">재생성 기회 충전</p>
-                <h2 id="ad-title" className="font-extrabold text-ink-900">광고 보고 초기화</h2>
-              </div>
+        <div className="fixed inset-0 z-50 bg-white" role="dialog" aria-modal="true" aria-label="광고 둘러보기">
+          <iframe
+            src={AD_DESTINATION_URL}
+            title="SquidTrip 광고"
+            className="h-full w-full border-0"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+
+          <div className="pointer-events-none absolute left-4 top-4 rounded-2xl bg-ink-900/85 px-4 py-3 text-white shadow-lift backdrop-blur-md sm:left-6 sm:top-6">
+            <p className="text-[11px] font-semibold text-white/70">둘러보기 남은 시간</p>
+            <p className="tnum mt-0.5 text-2xl font-black" aria-live="polite">
+              00:{String(adSecondsRemaining).padStart(2, '0')}
+            </p>
+          </div>
+
+          {adSecondsRemaining <= 0 && (
+            <div className="absolute inset-x-0 bottom-6 flex justify-center px-4 sm:bottom-8">
               <button
                 type="button"
-                className="rounded-xl px-3 py-2 text-sm text-ink-500 hover:bg-ink-50"
-                onClick={() => setAdItem(null)}
+                className="btn-primary min-w-56 rounded-2xl px-8 py-4 text-base shadow-[0_16px_38px_rgba(30,105,185,.38)]"
+                onClick={resetAfterAd}
                 disabled={resetting}
               >
-                닫기
+                {resetting ? '재생성 기회 여는 중' : '나가기 · 3회 다시 받기'}
               </button>
             </div>
-
-            <div className="m-5 flex aspect-video items-center justify-center rounded-[1.5rem] border border-accent-100 bg-gradient-to-br from-accent-50 to-white">
-              <div className="text-center">
-                <p className="text-4xl font-black tracking-[0.18em] text-accent-600">광고</p>
-                <p className="mt-2 text-xs text-ink-500">광고 영역 HTML 미리보기</p>
-              </div>
-            </div>
-
-            <div className="px-5 pb-5">
-              <p className="mb-3 text-center text-xs leading-relaxed text-ink-500">
-                광고 확인을 완료하면 {adItem.placeName}의 재생성 기회와 투표가 초기화돼요.
-              </p>
-              <button type="button" className="btn-primary w-full" onClick={resetAfterAd} disabled={resetting}>
-                {resetting ? '초기화하는 중' : '광고 시청 완료 · 3회 다시 받기'}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </>
