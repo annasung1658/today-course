@@ -73,6 +73,10 @@ export async function getVotingState(courseId: string, userId: string) {
 
   await assertParticipant(course.meetingId, userId);
 
+  // 마지막 투표 응답 직후의 새로고침이 누락되거나 배포 중 요청이 끊겨도,
+  // 상태 조회 시 전원 투표 완료 여부를 다시 확인해 타이머가 계속 돌지 않게 한다.
+  const finalizedOnRead = course.status === 'VOTING' && (await finalizeCourseWhenAllVoted(courseId));
+
   const courseWindow = { votingStartedAt: course.votingStartedAt, votingEndsAt: course.votingEndsAt };
   const eligible = course.eligibleParticipantCount;
 
@@ -114,11 +118,11 @@ export async function getVotingState(courseId: string, userId: string) {
     title: course.title,
     summary: course.summary,
     estimatedBudgetPerPerson: course.estimatedBudgetPerPerson,
-    status: course.status === 'CONFIRMED' ? ('CLOSED' as const) : ('OPEN' as const),
+    status: course.status === 'CONFIRMED' || finalizedOnRead ? ('CLOSED' as const) : ('OPEN' as const),
     startedAt: course.votingStartedAt.toISOString(),
     endsAt: course.votingEndsAt.toISOString(),
     serverTime: now.toISOString(),
-    remainingSeconds: remainingSecondsForCourse(courseWindow, now),
+    remainingSeconds: course.status === 'CONFIRMED' || finalizedOnRead ? 0 : remainingSecondsForCourse(courseWindow, now),
     eligibleParticipantCount: eligible,
     requiredDislikeCount: requiredDislikeCount(eligible),
     initialWindowMinutes: votingPolicy.initialWindowMinutes,
@@ -313,7 +317,7 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
 }
 
 /** 모든 대상자의 모든 항목 투표가 끝나면 남은 시간을 기다리지 않고 코스를 확정한다. */
-async function finalizeCourseWhenAllVoted(courseId: string): Promise<boolean> {
+export async function finalizeCourseWhenAllVoted(courseId: string): Promise<boolean> {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     include: {
