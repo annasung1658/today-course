@@ -53,18 +53,45 @@ export function CourseGenerationButton({
 }
 
 /** GENERATING 상태인 동안 주기적으로 새로고침해서 완료되면 자동으로 다음 화면을 보여준다. */
-export function GeneratingWatcher() {
+export function GeneratingWatcher({ meetingId }: { meetingId: string }) {
   const router = useRouter();
+  const [waitedSeconds, setWaitedSeconds] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 3000);
+    const timer = window.setInterval(() => {
+      setWaitedSeconds((seconds) => seconds + 3);
+      router.refresh();
+    }, 3000);
     return () => window.clearInterval(timer);
   }, [router]);
+
+  const retry = async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      await apiFetch(`/meetings/${meetingId}/course-generation`, {
+        method: 'POST',
+        idempotencyKey: newIdempotencyKey(),
+      });
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : '코스 생성을 다시 시작하지 못했어요.');
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="card border-accent-100 bg-accent-50 p-5">
       <p className="font-semibold text-accent-700">AI가 코스를 만들고 있어요</p>
       <p className="mt-1 text-sm text-accent-700">보통 몇십 초 정도 걸려요. 이 화면은 자동으로 갱신돼요.</p>
+      {error && <div className="mt-3"><ErrorNotice message={error} /></div>}
+      {waitedSeconds >= 60 && (
+        <button type="button" className="btn-secondary mt-3 bg-white" onClick={retry} disabled={retrying}>
+          {retrying ? '다시 만드는 중' : '오래 걸리네요 · 다시 시도하기'}
+        </button>
+      )}
     </div>
   );
 }

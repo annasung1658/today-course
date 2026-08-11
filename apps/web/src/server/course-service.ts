@@ -54,7 +54,23 @@ export async function queueCourseGeneration(meetingId: string) {
   const existing = await prisma.aiJob.findFirst({
     where: { meetingId, type: 'COURSE_GENERATION', status: { in: ['QUEUED', 'RUNNING'] } },
   });
-  if (existing) return existing;
+  if (existing) {
+    const lastActivity = existing.startedAt ?? existing.scheduledAt;
+    const stale = Date.now() - lastActivity.getTime() >= 60_000;
+    if (!stale) return existing;
+
+    // 서버리스 제한으로 백그라운드 실행이 끊긴 작업은 영구 RUNNING으로 남을 수 있다.
+    // 60초 넘게 진행이 없으면 실패 처리하고 새 작업을 만들 수 있게 복구한다.
+    await prisma.aiJob.update({
+      where: { id: existing.id },
+      data: {
+        status: 'FAILED',
+        finishedAt: new Date(),
+        errorCode: 'GENERATION_TIMEOUT',
+        errorMessage: '코스 생성 작업이 제한 시간 안에 완료되지 않아 다시 시도합니다.',
+      },
+    });
+  }
 
   await prisma.meeting.update({ where: { id: meetingId }, data: { status: 'GENERATING' } });
   const job = await prisma.aiJob.create({

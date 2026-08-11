@@ -85,7 +85,7 @@ export default async function MeetingDetailPage({ params }: PageProps) {
         <CourseGenerationButton meetingId={meeting.id} allResponded={submitted === total} />
       )}
 
-      {meeting.status === 'GENERATING' && <GeneratingWatcher />}
+      {meeting.status === 'GENERATING' && <GeneratingWatcher meetingId={meeting.id} />}
 
       {meeting.status === 'GENERATION_FAILED' && meeting.isHost && (
         <CourseGenerationButton meetingId={meeting.id} allResponded={submitted === total} />

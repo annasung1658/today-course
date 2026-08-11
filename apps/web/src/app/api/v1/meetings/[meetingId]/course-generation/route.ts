@@ -2,7 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
 import { authedRoute, readJson } from '@/lib/api/handler';
 import { withIdempotency } from '@/lib/api/idempotency';
-import { closeResponsesAndQueueGeneration, queueCourseGeneration } from '@/server/course-service';
+import { closeResponsesAndQueueGeneration, queueCourseGeneration, runCourseGeneration } from '@/server/course-service';
+
+export const maxDuration = 60;
 
 /**
  * 응답 마감 후 서버가 자동 호출한다.
@@ -17,11 +19,17 @@ export const POST = authedRoute<{ meetingId: string }, unknown>(async ({ params,
   return withIdempotency(
     { request, userId: session.userId, endpoint: 'POST /course-generation', body },
     async () => {
+      let result;
       if (meeting.responsesClosedAt) {
         const job = await queueCourseGeneration(params.meetingId);
-        return { jobId: job.id, status: job.status };
+        result = { jobId: job.id, status: job.status };
+      } else {
+        result = await closeResponsesAndQueueGeneration(params.meetingId);
       }
-      return closeResponsesAndQueueGeneration(params.meetingId);
+
+      // Vercel에서 응답 후 백그라운드 작업이 중단되지 않도록 요청 수명 안에서 완료한다.
+      if ('jobId' in result && typeof result.jobId === 'string') await runCourseGeneration(result.jobId);
+      return result;
     },
   );
 });
