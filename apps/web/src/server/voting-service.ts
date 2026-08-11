@@ -34,6 +34,8 @@ export interface VotingStateItem {
   title: string;
   placeName: string;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   startAt: string;
   endAt: string;
   estimatedPricePerPerson: number;
@@ -82,6 +84,8 @@ export async function getVotingState(courseId: string, userId: string) {
       title: item.title,
       placeName: item.placeName,
       address: item.address,
+      latitude: item.latitude,
+      longitude: item.longitude,
       startAt: item.startAt.toISOString(),
       endAt: item.endAt.toISOString(),
       estimatedPricePerPerson: item.estimatedPricePerPerson,

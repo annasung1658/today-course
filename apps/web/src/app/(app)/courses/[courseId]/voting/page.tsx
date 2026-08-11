@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { VotingBoard } from '@/components/voting-board';
 import { getSession } from '@/lib/auth/session';
 import { getVotingState } from '@/server/voting-service';
+import { env } from '@/lib/env';
 
 // 투표 상태는 매 요청마다 서버 시간과 함께 새로 읽어야 한다.
 export const dynamic = 'force-dynamic';
@@ -32,7 +33,7 @@ export default async function VotingPage({ params }: { params: Promise<{ courseI
         )}
       </div>
 
-      <VotingBoard initialState={state as never} />
+      <VotingBoard initialState={state as never} kakaoJsKey={env.KAKAO_JS_KEY ?? null} />
     </div>
   );
 }

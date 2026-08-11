@@ -17,8 +17,8 @@ const schema = z.object({
   KAKAO_REST_API_KEY: z.string().optional(),
   KAKAO_JS_KEY: z.string().optional(),
 
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
 
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
@@ -40,7 +40,7 @@ export const env = parsed.data;
 /** 어떤 Provider가 실제 연동인지 Mock인지 한눈에 본다. */
 export const providerMode = {
   auth: env.KAKAO_CLIENT_ID ? 'KAKAO' : 'EMAIL_ONLY',
-  ai: env.OPENAI_API_KEY ? 'OPENAI' : 'MOCK',
+  ai: env.GEMINI_API_KEY ? 'GEMINI' : 'MOCK',
   place: env.KAKAO_REST_API_KEY ? 'KAKAO_LOCAL' : 'MOCK',
   storage: env.SUPABASE_URL ? 'SUPABASE' : 'MOCK',
 } as const;

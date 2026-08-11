@@ -64,7 +64,7 @@ const NEGATION = /(싫|안 |못 |별로|피하|말고|빼고|제외)/;
 
 function splitClauses(text: string): string[] {
   return text
-    .split(/[,.·]|그리고|하지만|근데|그런데|\n/)
+    .split(/[,.·]|그리고|하지만|근데|그런데|고\s|\n/)
     .map((s) => s.trim())
     .filter(Boolean);
 }

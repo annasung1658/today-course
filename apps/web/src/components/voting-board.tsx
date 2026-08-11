@@ -7,6 +7,7 @@ import { formatClock, useServerCountdown } from '@/hooks/use-server-countdown';
 import { categoryLabels, formatCurrency, formatTime } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { ErrorNotice, StatusChip } from '@/components/ui';
+import { KakaoRouteMap } from '@/components/kakao-map';
 
 interface VotingItem {
   courseItemId: string;
@@ -15,6 +16,8 @@ interface VotingItem {
   title: string;
   placeName: string;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   startAt: string;
   endAt: string;
   estimatedPricePerPerson: number;
@@ -54,7 +57,13 @@ interface VotingState {
 
 const POLL_INTERVAL_MS = 4000;
 
-export function VotingBoard({ initialState }: { initialState: VotingState }) {
+export function VotingBoard({
+  initialState,
+  kakaoJsKey,
+}: {
+  initialState: VotingState;
+  kakaoJsKey: string | null;
+}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +119,16 @@ export function VotingBoard({ initialState }: { initialState: VotingState }) {
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
       <div className="order-2 space-y-3 lg:order-1">
         {error && <ErrorNotice message={error} />}
+
+        <KakaoRouteMap
+          apiKey={kakaoJsKey}
+          points={state.items.map((item) => ({
+            sequence: item.sequence,
+            placeName: item.placeName,
+            latitude: item.latitude,
+            longitude: item.longitude,
+          }))}
+        />
 
         {state.items.map((item) => (
           <CourseItemCard

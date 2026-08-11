@@ -11,6 +11,7 @@ import { MockAiProvider } from './mock/ai';
 import { MockPlaceProvider, MockRouteProvider } from './mock/place';
 import { DisabledKakaoAuthProvider, MockNotificationProvider, MockStorageProvider } from './mock/misc';
 import { KakaoAuthProvider } from './kakao/auth';
+import { GeminiAiProvider } from './gemini/ai';
 
 /**
  * Provider 레지스트리.
@@ -26,8 +27,9 @@ let storageSingleton: StorageProvider | null = null;
 
 export function getAiProvider(): AiProvider {
   if (!aiSingleton) {
-    // OpenAI 연동은 OPENAI_API_KEY가 있을 때 여기서 교체한다(README 참고).
-    aiSingleton = new MockAiProvider();
+    aiSingleton = env.GEMINI_API_KEY
+      ? new GeminiAiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL)
+      : new MockAiProvider();
   }
   return aiSingleton;
 }
