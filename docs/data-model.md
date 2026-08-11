@@ -144,8 +144,8 @@ INVITING → COLLECTING_RESPONSES → GENERATING → VOTING → CONFIRMED → CO
 ACTIVE ──과반수 싫어요──► REGENERATION_QUEUED ──► REGENERATING ──► REPLACED
    │                                                  │
    │                                                  └─(실패)─► ACTIVE 로 복귀
-   └──재생성 2회 소진──► LOCKED
+   └──재생성 3회 소진──► LOCKED
 ```
 
 새로 만들어진 교체 항목은 `ACTIVE` + `revoteEndsAt` 값을 갖고 시작합니다.
-2회째 재생성으로 만들어진 항목은 곧바로 `LOCKED`이 됩니다.
+3회째 재생성으로 만들어진 항목은 곧바로 `LOCKED`이 됩니다. 광고 확인 후 횟수와 해당 항목 투표를 초기화할 수 있습니다.

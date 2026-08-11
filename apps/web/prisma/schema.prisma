@@ -433,7 +433,7 @@ model CourseItem {
   fixedScheduleId       String?
   generationVersion     Int                @default(1)
   regenerationCount     Int                @default(0)
-  maxRegenerationCount  Int                @default(2)
+  maxRegenerationCount  Int                @default(3)
   status                CourseItemStatus   @default(ACTIVE)
   // 재생성으로 교체된 항목만 값이 있다. min(재생성완료 + 10분, course.votingEndsAt)
   revoteEndsAt          DateTime?
