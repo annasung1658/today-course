@@ -12,12 +12,16 @@ async function ensureGuestbookSchema() {
           "id" TEXT NOT NULL,
           "authorId" TEXT NOT NULL,
           "content" TEXT NOT NULL,
+          "isAnonymous" BOOLEAN NOT NULL DEFAULT false,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT "GuestbookEntry_pkey" PRIMARY KEY ("id"),
           CONSTRAINT "GuestbookEntry_authorId_fkey"
             FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
         )
       `);
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "GuestbookEntry" ADD COLUMN IF NOT EXISTS "isAnonymous" BOOLEAN NOT NULL DEFAULT false',
+      );
       await prisma.$executeRawUnsafe(
         'CREATE INDEX IF NOT EXISTS "GuestbookEntry_createdAt_idx" ON "GuestbookEntry"("createdAt")',
       );
@@ -36,11 +40,14 @@ const serialize = (entry: PrismaRow) => ({
   id: entry.id,
   content: entry.content,
   createdAt: entry.createdAt.toISOString(),
-  author: {
-    id: entry.author.id,
-    nickname: entry.author.nickname,
-    profileImageUrl: entry.author.profileImageUrl,
-  },
+  isAnonymous: entry.isAnonymous,
+  author: entry.isAnonymous
+    ? { id: null, nickname: '익명 여행자', profileImageUrl: null }
+    : {
+        id: entry.author.id,
+        nickname: entry.author.nickname,
+        profileImageUrl: entry.author.profileImageUrl,
+      },
 });
 
 export async function listGuestbookEntries(limit = 50) {
@@ -53,10 +60,10 @@ export async function listGuestbookEntries(limit = 50) {
   return entries.map(serialize);
 }
 
-export async function createGuestbookEntry(authorId: string, content: string) {
+export async function createGuestbookEntry(authorId: string, content: string, isAnonymous = false) {
   await ensureGuestbookSchema();
   const entry = await prisma.guestbookEntry.create({
-    data: { authorId, content },
+    data: { authorId, content, isAnonymous },
     include: { author: { select: { id: true, nickname: true, profileImageUrl: true } } },
   });
   return serialize(entry);

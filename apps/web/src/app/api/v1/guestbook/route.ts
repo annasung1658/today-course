@@ -9,5 +9,5 @@ export const GET = authedRoute(async ({ request }) => {
 
 export const POST = authedRoute(async ({ request, session }) => {
   const input = guestbookEntrySchema.parse(await readJson(request));
-  return { entry: await createGuestbookEntry(session.userId, input.content) };
+  return { entry: await createGuestbookEntry(session.userId, input.content, input.anonymous) };
 });

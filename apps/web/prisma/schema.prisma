@@ -166,10 +166,11 @@ model User {
 }
 
 model GuestbookEntry {
-  id        String   @id @default(cuid())
-  authorId  String
-  content   String
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  authorId    String
+  content     String
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
