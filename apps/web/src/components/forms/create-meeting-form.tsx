@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
@@ -41,6 +41,15 @@ export function CreateMeetingForm() {
   const [fixedSchedules, setFixedSchedules] = useState<FixedScheduleDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [minimumDateTime, setMinimumDateTime] = useState('');
+
+  useEffect(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setMinimumDateTime(`${year}-${month}-${day}T00:00`);
+  }, []);
 
   const toggle = (list: string[], setList: (v: string[]) => void, value: string) =>
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -106,11 +115,14 @@ export function CreateMeetingForm() {
           <input
             id="startAt"
             type="datetime-local"
+            min={minimumDateTime}
+            step={300}
             className="field"
             value={startAt}
             onChange={(e) => setStartAt(e.target.value)}
             required
           />
+          <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 5분 단위예요.</p>
         </div>
         <div>
           <label className="label" htmlFor="endAt">
@@ -119,6 +131,8 @@ export function CreateMeetingForm() {
           <input
             id="endAt"
             type="datetime-local"
+            min={startAt || minimumDateTime}
+            step={300}
             className="field"
             value={endAt}
             onChange={(e) => setEndAt(e.target.value)}
@@ -204,6 +218,9 @@ export function CreateMeetingForm() {
               <div className="grid gap-2 sm:grid-cols-2">
                 <input
                   type="datetime-local"
+                  min={startAt || minimumDateTime}
+                  max={endAt || undefined}
+                  step={300}
                   className="field"
                   value={schedule.startAt}
                   onChange={(e) =>
@@ -215,6 +232,9 @@ export function CreateMeetingForm() {
                 />
                 <input
                   type="datetime-local"
+                  min={schedule.startAt || startAt || minimumDateTime}
+                  max={endAt || undefined}
+                  step={300}
                   className="field"
                   value={schedule.endAt}
                   onChange={(e) =>
