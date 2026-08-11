@@ -125,8 +125,10 @@ export function VotingBoard({
           points={state.items.map((item) => ({
             sequence: item.sequence,
             placeName: item.placeName,
+            address: item.address,
             latitude: item.latitude,
             longitude: item.longitude,
+            travelMinutesFromPrev: item.travelMinutesFromPrev,
           }))}
         />
 
@@ -175,7 +177,7 @@ function TimerPanel({
   const revoting = state.items.filter((i) => i.phase === 'REVOTE').length;
 
   return (
-    <div className="card p-5">
+    <div className="card overflow-hidden p-5 shadow-lift">
       <p className="text-sm font-medium text-ink-500">{state.meetingTitle}</p>
       <p className="mt-0.5 text-sm text-ink-500">참여 {state.eligibleParticipantCount}명</p>
 
@@ -245,8 +247,8 @@ function CourseItemCard({
   return (
     <article
       className={cn(
-        'card p-4 transition-colors sm:p-5',
-        regenerating && 'border-accent-100 bg-accent-50',
+        'card card-interactive p-4 sm:p-5',
+        regenerating && 'border-accent-100 bg-accent-50/90',
         item.isFixedSchedule && 'border-ink-200 bg-ink-50',
       )}
     >
