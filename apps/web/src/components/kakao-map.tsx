@@ -41,7 +41,13 @@ function loadKakaoMapsSdk(apiKey: string): Promise<void> {
   const promise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`;
-    script.onload = () => window.kakao?.maps.load(() => resolve());
+    script.onload = () => {
+      if (!window.kakao?.maps) {
+        reject(new Error('KAKAO_SDK_UNAVAILABLE'));
+        return;
+      }
+      window.kakao.maps.load(() => resolve());
+    };
     script.onerror = () => reject(new Error('카카오 지도를 불러오지 못했습니다.'));
     document.head.appendChild(script);
   }).catch((error) => {
@@ -67,6 +73,7 @@ export function KakaoRouteMap({ apiKey, points }: { apiKey: string | null; point
   const containerRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
   const [mapState, setMapState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [mapError, setMapError] = useState<'SDK' | 'CONFIG' | null>(null);
   const located = useMemo(
     () => points.filter((point): point is MapPoint & { latitude: number; longitude: number } => point.latitude !== null && point.longitude !== null),
     [points],
@@ -92,6 +99,7 @@ export function KakaoRouteMap({ apiKey, points }: { apiKey: string | null; point
     if (!nearViewport || !apiKey || located.length === 0 || !containerRef.current) return;
     let cancelled = false;
     setMapState('loading');
+    setMapError(null);
 
     loadKakaoMapsSdk(apiKey)
       .then(() => {
@@ -123,8 +131,11 @@ export function KakaoRouteMap({ apiKey, points }: { apiKey: string | null; point
         map.setBounds(bounds);
         setMapState('ready');
       })
-      .catch(() => {
-        if (!cancelled) setMapState('error');
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMapError(error instanceof Error && error.message === 'KAKAO_SDK_UNAVAILABLE' ? 'CONFIG' : 'SDK');
+          setMapState('error');
+        }
       });
 
     return () => {
@@ -158,7 +169,11 @@ export function KakaoRouteMap({ apiKey, points }: { apiKey: string | null; point
                 <p className="mt-3 text-sm font-semibold text-accent-700">
                   {mapState === 'error' ? '지도를 불러오지 못했어요' : '코스 지도를 준비하고 있어요'}
                 </p>
-                <p className="mt-1 text-xs text-ink-500">아래 장소 목록은 그대로 이용할 수 있어요.</p>
+                <p className="mt-1 text-xs text-ink-500">
+                  {mapError === 'CONFIG'
+                    ? '카카오 개발자 콘솔에서 현재 배포 도메인을 허용해 주세요.'
+                    : '카카오 JavaScript 키와 네트워크 상태를 확인해 주세요.'}
+                </p>
               </div>
             </div>
           )}
