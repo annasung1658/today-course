@@ -40,7 +40,7 @@ export default async function MeetingDetailPage({ params }: PageProps) {
           {formatDate(meeting.scheduledStartAt)} · {formatTime(meeting.scheduledStartAt)}–
           {formatTime(meeting.scheduledEndAt)} · {meeting.area.name}
         </p>
-        {meeting.isHost && <MeetingHostActions meeting={{ id: meeting.id, title: meeting.title, capacity: meeting.capacity, specialNotes: meeting.specialNotes }} />}
+        <MeetingHostActions isHost={meeting.isHost} meeting={{ id: meeting.id, title: meeting.title, capacity: meeting.capacity, specialNotes: meeting.specialNotes }} />
       </header>
 
       {meeting.recordAccess.available && meeting.status !== 'CANCELLED' && (

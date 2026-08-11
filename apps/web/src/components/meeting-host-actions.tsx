@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
 
-export function MeetingHostActions({ meeting }: { meeting: { id: string; title: string; capacity: number; specialNotes: string | null } }) {
+export function MeetingHostActions({ meeting, isHost }: { meeting: { id: string; title: string; capacity: number; specialNotes: string | null }; isHost: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(meeting.title);
@@ -25,7 +25,10 @@ export function MeetingHostActions({ meeting }: { meeting: { id: string; title: 
   };
 
   const remove = async () => {
-    if (!window.confirm('이 약속을 정말 삭제할까요? 사진, 글, 댓글도 모두 삭제되며 되돌릴 수 없어요.')) return;
+    const message = isHost
+      ? '이 약속을 정말 삭제할까요? 모든 참여자에게서 약속과 사진, 글, 댓글이 삭제되며 되돌릴 수 없어요.'
+      : '내 약속 목록에서 이 방을 지울까요? 다른 참여자의 방과 기록은 그대로 유지돼요.';
+    if (!window.confirm(message)) return;
     setBusy(true); setError(null);
     try {
       await apiFetch(`/meetings/${meeting.id}`, { method: 'DELETE' });
@@ -39,11 +42,11 @@ export function MeetingHostActions({ meeting }: { meeting: { id: string; title: 
   return (
     <div className="mt-4">
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-secondary" onClick={() => setEditing(true)}>방 수정</button>
-        <button type="button" className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50" onClick={remove} disabled={busy}>방 삭제</button>
+        {isHost && <button type="button" className="btn-secondary" onClick={() => setEditing(true)}>방 수정</button>}
+        <button type="button" className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50" onClick={remove} disabled={busy}>{isHost ? '방 삭제' : '내 목록에서 삭제'}</button>
       </div>
       {error && <div className="mt-3"><ErrorNotice message={error} /></div>}
-      {editing && (
+      {editing && isHost && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setEditing(false)}>
           <section className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-[0_28px_90px_rgba(18,54,82,.35)]" role="dialog" aria-modal="true" aria-labelledby="meeting-edit-title">
             <h2 id="meeting-edit-title" className="text-xl font-extrabold">약속방 수정</h2>

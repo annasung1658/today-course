@@ -32,9 +32,16 @@ export const DELETE = authedRoute<{ meetingId: string }, unknown>(async ({ param
     select: { hostUserId: true, record: { select: { photos: { select: { storageKey: true } } } } },
   });
   if (!meeting) throw apiError('MEETING_NOT_FOUND');
-  if (meeting.hostUserId !== session.userId) throw apiError('FORBIDDEN', { reason: '방장만 약속을 삭제할 수 있습니다.' });
+  if (meeting.hostUserId !== session.userId) {
+    const participant = await prisma.participant.findUnique({
+      where: { meetingId_userId: { meetingId: params.meetingId, userId: session.userId } },
+    });
+    if (!participant || participant.status === 'DECLINED') throw apiError('FORBIDDEN');
+    await prisma.participant.update({ where: { id: participant.id }, data: { status: 'DECLINED' } });
+    return { id: params.meetingId, deleted: true, scope: 'MEMBER_ONLY' };
+  }
   await prisma.meeting.delete({ where: { id: params.meetingId } });
   const storage = getStorageProvider();
   await Promise.allSettled((meeting.record?.photos ?? []).flatMap((photo) => photo.storageKey ? [storage.remove(photo.storageKey)] : []));
-  return { id: params.meetingId, deleted: true };
+  return { id: params.meetingId, deleted: true, scope: 'EVERYONE' };
 });

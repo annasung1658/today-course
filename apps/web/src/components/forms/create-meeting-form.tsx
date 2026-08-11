@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
@@ -27,6 +27,18 @@ const ATMOSPHERES = [
   { value: 'SPECIAL', label: '특별한' },
 ];
 
+function getTodayMinimum() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}T00:00`;
+}
+
+function isAllowedDateTime(value: string, minimum: string) {
+  return !value || value >= minimum;
+}
+
 /** 약속 만들기. 픽스 일정은 AI가 바꿀 수 없다는 점을 화면에서 분명히 말한다. */
 export function CreateMeetingForm() {
   const router = useRouter();
@@ -41,15 +53,7 @@ export function CreateMeetingForm() {
   const [fixedSchedules, setFixedSchedules] = useState<FixedScheduleDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [minimumDateTime, setMinimumDateTime] = useState('');
-
-  useEffect(() => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    setMinimumDateTime(`${year}-${month}-${day}T00:00`);
-  }, []);
+  const [minimumDateTime] = useState(getTodayMinimum);
 
   const toggle = (list: string[], setList: (v: string[]) => void, value: string) =>
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -119,7 +123,11 @@ export function CreateMeetingForm() {
             step={300}
             className="field"
             value={startAt}
-            onChange={(e) => setStartAt(e.target.value)}
+            onChange={(e) => {
+              if (!isAllowedDateTime(e.target.value, minimumDateTime)) return;
+              setStartAt(e.target.value);
+              if (endAt && endAt < e.target.value) setEndAt('');
+            }}
             required
           />
           <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 5분 단위예요.</p>
@@ -135,7 +143,9 @@ export function CreateMeetingForm() {
             step={300}
             className="field"
             value={endAt}
-            onChange={(e) => setEndAt(e.target.value)}
+            onChange={(e) => {
+              if (isAllowedDateTime(e.target.value, startAt || minimumDateTime)) setEndAt(e.target.value);
+            }}
             required
           />
         </div>
@@ -223,11 +233,12 @@ export function CreateMeetingForm() {
                   step={300}
                   className="field"
                   value={schedule.startAt}
-                  onChange={(e) =>
-                    setFixedSchedules((list) =>
-                      list.map((s, i) => (i === index ? { ...s, startAt: e.target.value } : s)),
-                    )
-                  }
+                  onChange={(e) => {
+                    if (!isAllowedDateTime(e.target.value, startAt || minimumDateTime)) return;
+                    setFixedSchedules((list) => list.map((s, i) => i === index ? {
+                      ...s, startAt: e.target.value, endAt: s.endAt && s.endAt < e.target.value ? '' : s.endAt,
+                    } : s));
+                  }}
                   required
                 />
                 <input
@@ -237,11 +248,10 @@ export function CreateMeetingForm() {
                   step={300}
                   className="field"
                   value={schedule.endAt}
-                  onChange={(e) =>
-                    setFixedSchedules((list) =>
-                      list.map((s, i) => (i === index ? { ...s, endAt: e.target.value } : s)),
-                    )
-                  }
+                  onChange={(e) => {
+                    if (!isAllowedDateTime(e.target.value, schedule.startAt || startAt || minimumDateTime)) return;
+                    setFixedSchedules((list) => list.map((s, i) => i === index ? { ...s, endAt: e.target.value } : s));
+                  }}
                   required
                 />
               </div>
