@@ -78,6 +78,10 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const guestbookEntrySchema = z.object({
+  content: z.string().trim().min(1, '방명록 내용을 입력해 주세요.').max(300, '방명록은 300자까지 남길 수 있어요.'),
+});
+
 // ── 사용자 ──────────────────────────────────────────────────────────
 
 export const updateMeSchema = z.object({
