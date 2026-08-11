@@ -56,11 +56,17 @@ function loadKakaoMapsSdk(apiKey: string): Promise<void> {
     const script = document.createElement('script');
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false&libraries=services`;
     script.onload = () => {
-      if (!window.kakao?.maps?.services) {
+      if (!window.kakao?.maps) {
         reject(new Error('KAKAO_SDK_UNAVAILABLE'));
         return;
       }
-      window.kakao.maps.load(() => resolve());
+      window.kakao.maps.load(() => {
+        if (!window.kakao?.maps?.services) {
+          reject(new Error('KAKAO_SERVICES_UNAVAILABLE'));
+          return;
+        }
+        resolve();
+      });
     };
     script.onerror = () => reject(new Error('카카오 지도를 불러오지 못했습니다.'));
     document.head.appendChild(script);
