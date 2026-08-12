@@ -28,7 +28,23 @@ const schema = z.object({
   CRON_SECRET: z.string().default('dev-cron-secret'),
 });
 
-const parsed = schema.safeParse(process.env);
+/**
+ * AUTH_SECRET/CRON_SECRET은 로컬 개발 편의를 위해 기본값을 두지만, 그 기본값은
+ * .env.example에 그대로 공개되어 있다 — 운영 환경에서 설정을 깜빡하면 누구나
+ * 세션을 위조하거나(AUTH_SECRET) 내부 스케줄러를 호출(CRON_SECRET)할 수 있게
+ * 조용히 뚫린다. 운영에서는 기본값이면 부팅 자체를 막는다.
+ */
+const withProductionSecretCheck = schema.superRefine((value, ctx) => {
+  if (value.NODE_ENV !== 'production') return;
+  if (value.AUTH_SECRET === 'dev-only-secret-change-me-please') {
+    ctx.addIssue({ code: 'custom', path: ['AUTH_SECRET'], message: '운영 환경에서는 기본값을 쓸 수 없습니다. openssl rand -base64 32로 새로 발급하세요.' });
+  }
+  if (value.CRON_SECRET === 'dev-cron-secret') {
+    ctx.addIssue({ code: 'custom', path: ['CRON_SECRET'], message: '운영 환경에서는 기본값을 쓸 수 없습니다.' });
+  }
+});
+
+const parsed = withProductionSecretCheck.safeParse(process.env);
 
 if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');

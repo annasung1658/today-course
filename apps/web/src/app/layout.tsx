@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { env } from '@/lib/env';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(env.APP_URL),
   title: {
     default: '오늘코스 · 모두의 취향으로 만드는 모임 코스',
     template: '%s · 오늘코스',
