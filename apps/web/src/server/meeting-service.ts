@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import type { createMeetingSchema } from '@/server/schemas';
 import type { PrismaRow, PrismaTx } from '@/server/prisma-types';
 import { canScheduleMeeting, meetingRecordWindow } from '@/lib/meeting-lifecycle';
+import { finalizeCourse } from '@/server/course-service';
 
 /** 약속 생성·조회·초대. */
 
@@ -110,6 +111,20 @@ export interface MeetingDetail {
   recordAccess: { available: boolean; writable: boolean; opensAt: string; closesAt: string };
 }
 
+async function finalizeExpiredCourseOnRead(meeting: PrismaRow) {
+  const course = meeting.courses?.[0];
+  if (meeting.status !== 'VOTING' || !course || course.status !== 'VOTING' || course.votingEndsAt.getTime() > Date.now()) return;
+  try {
+    const result = await finalizeCourse(course.id);
+    if (('confirmed' in result && result.confirmed) || ('alreadyConfirmed' in result && result.alreadyConfirmed)) {
+      meeting.status = 'CONFIRMED';
+      course.status = 'CONFIRMED';
+    }
+  } catch {
+    // 크론이 다시 처리할 수 있도록 조회 자체는 실패시키지 않는다.
+  }
+}
+
 export async function getMeetingDetail(meetingId: string, userId: string): Promise<MeetingDetail> {
   const meeting = await prisma.meeting.findUnique({
     where: { id: meetingId },
@@ -124,6 +139,8 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
     },
   });
   if (!meeting) throw apiError('MEETING_NOT_FOUND');
+
+  await finalizeExpiredCourseOnRead(meeting);
 
   const me = meeting.participants.find((p: PrismaRow) => p.userId === userId);
   if (!me) throw apiError('FORBIDDEN');
@@ -214,6 +231,8 @@ export async function listMyMeetings(userId: string, status?: string): Promise<M
     },
     orderBy: { scheduledStartAt: 'asc' },
   });
+
+  await Promise.all(meetings.map((meeting: PrismaRow) => finalizeExpiredCourseOnRead(meeting)));
 
   return meetings.map((m: PrismaRow) => ({
     id: m.id,

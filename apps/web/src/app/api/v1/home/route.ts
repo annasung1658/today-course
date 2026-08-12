@@ -19,6 +19,7 @@ export const GET = authedRoute(async ({ session }) => {
         new Date(m.responseDeadlineAt).getTime() > now,
     ),
     meetingsGenerating: meetings.filter((m) => m.status === 'GENERATING'),
+    meetingsGenerationFailed: meetings.filter((m) => m.status === 'GENERATION_FAILED'),
     meetingsInVoting: meetings.filter((m) => m.status === 'VOTING'),
     upcomingMeetings: meetings.filter(
       (m) => m.status === 'CONFIRMED' && new Date(m.scheduledStartAt).getTime() > now,
