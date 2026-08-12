@@ -92,13 +92,20 @@ export interface TimeBand {
 }
 
 export const courseSlotPolicy = {
+  /**
+   * 마지막 밴드를 23시에서 끊는 이유: 실제 영업시간이 확인되지 않은 장소(카카오 데이터
+   * 대부분)는 안전하게 09:00~23:00 영업으로만 가정하고 그 밖은 "확인 불가"로 제외한다
+   * (course.ts의 FALLBACK_HOURS/CLOSED_AT_VISIT_TIME 참고). 밴드를 그 뒤로도 열어두면
+   * 안전 필터에 막혀 후보가 항상 0개가 되고 "장소가 부족합니다"로 생성이 실패한다
+   * (실제로 겪은 버그) — 밴드 경계는 실제로 안전하게 추천 가능한 시간까지만 잡는다.
+   */
   timeBands: [
     { startHour: 7, endHour: 9, categories: ['BREAKFAST'] },
     { startHour: 9, endHour: 11, categories: ['CAFE', 'WALK', 'ACTIVITY'] },
     { startHour: 11, endHour: 14, categories: ['LUNCH'] },
     { startHour: 14, endHour: 17, categories: ['EXHIBITION', 'ACTIVITY', 'SHOPPING', 'WALK', 'CAFE'] },
     { startHour: 17, endHour: 19, categories: ['DINNER'] },
-    { startHour: 19, endHour: 31, categories: ['CAFE', 'BAR', 'WALK'] },
+    { startHour: 19, endHour: 23, categories: ['CAFE', 'BAR', 'WALK'] },
   ] as TimeBand[],
   /** 카테고리별 평균 체류시간(분). */
   categoryDurationMinutes: {

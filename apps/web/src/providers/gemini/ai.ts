@@ -389,11 +389,15 @@ type Slot =
   | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number; targetStartAt: Date }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
 
-/** hour(0~23)가 속한 시간대 밴드를 찾는다. 자정 넘은 시각(0~6시)은 전날 밤 밴드의 연장으로 본다. */
-function findTimeBand(hour: number): TimeBand {
+/**
+ * hour(0~23)가 속한 시간대 밴드를 찾는다. 자정 넘은 시각(0~6시)은 전날 밤 밴드의 연장으로 본다.
+ * 어느 밴드에도 안 걸리면(예: 23시~다음날 7시) null을 돌려준다 — 그 시간대는 안전하게
+ * 검증된 영업시간 데이터가 없어 새 장소를 추천할 수 없다는 뜻이라, 억지로 아무 밴드에나
+ * 끼워 맞추면 안 된다.
+ */
+function findTimeBand(hour: number): TimeBand | null {
   const normalized = hour < 7 ? hour + 24 : hour;
-  const bands = courseSlotPolicy.timeBands;
-  return bands.find((b) => normalized >= b.startHour && normalized < b.endHour) ?? bands[bands.length - 1]!;
+  return courseSlotPolicy.timeBands.find((b) => normalized >= b.startHour && normalized < b.endHour) ?? null;
 }
 
 /**
@@ -442,6 +446,13 @@ function planCategories(input: CourseGenerationInput): Slot[] {
 
     const { hour, minute } = koreaTimeParts(cursor);
     const band = findTimeBand(hour);
+    if (!band) {
+      // 안전하게 검증된 영업시간 밖(예: 23시~다음날 7시)이라 새로 추천할 수 있는 시간대가
+      // 아니다 — 다음 픽스 일정(호스트가 직접 지정한 거라 안전조건과 무관)이나 모임
+      // 종료까지 그대로 넘어간다.
+      cursor = nextFixed ? new Date(nextFixed.startAt) : new Date(end);
+      continue;
+    }
     const normalizedHour = hour < 7 ? hour + 24 : hour;
     const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
     // 다음 경계(밴드 끝/모임 종료/다음 픽스 일정 시작 중 가장 이른 시각) — 커서는 결국 여기까지 진행한다.
