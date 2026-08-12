@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { SharedCourseSummary } from '@/server/course-share-service';
 import { KakaoRouteMap } from '@/components/kakao-map';
 
@@ -8,18 +9,25 @@ export function CourseSummaryShare({ course, kakaoJsKey }: { course: SharedCours
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setShareUrl(`${window.location.origin}/share/courses/${course.courseId}`);
   }, [course.courseId]);
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   const copyShareLink = async () => {
@@ -34,9 +42,9 @@ export function CourseSummaryShare({ course, kakaoJsKey }: { course: SharedCours
         코스 요약·공유
       </button>
 
-      {open && (
+      {mounted && open && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/35 px-4 py-8 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-ink-900/45 p-3 backdrop-blur-[3px] sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="course-summary-title"
@@ -44,8 +52,8 @@ export function CourseSummaryShare({ course, kakaoJsKey }: { course: SharedCours
             if (event.target === event.currentTarget) setOpen(false);
           }}
         >
-          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_28px_80px_rgba(30,74,110,.24)]">
-            <div className="bg-gradient-to-br from-accent-50 via-white to-accent-100/60 px-6 pb-5 pt-6 sm:px-8">
+          <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-white/80 bg-white shadow-[0_28px_80px_rgba(15,42,65,.32)]">
+            <div className="shrink-0 bg-gradient-to-br from-accent-50 via-white to-accent-100/60 px-5 pb-4 pt-5 sm:px-7">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold tracking-[.16em] text-accent-600">TODAY COURSE</p>
@@ -60,7 +68,7 @@ export function CourseSummaryShare({ course, kakaoJsKey }: { course: SharedCours
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-accent-50/30 px-4 py-5 sm:px-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-accent-50/30 p-3 sm:p-5">
               <KakaoRouteMap
                 apiKey={kakaoJsKey}
                 points={course.items.map((item) => ({
@@ -101,7 +109,8 @@ export function CourseSummaryShare({ course, kakaoJsKey }: { course: SharedCours
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
