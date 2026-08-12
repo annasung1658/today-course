@@ -17,6 +17,7 @@ const ALLOWED_IMAGE_TYPES: Record<string, 'jpg' | 'jpeg' | 'png' | 'webp'> = {
   'image/webp': 'webp',
 };
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+const MAX_UPLOAD_COUNT = 10;
 
 export function MeetingRecordBoard({ recordId, title, dateLabel, writable, closesAt, photos, posts }: { recordId: string; title: string; dateLabel: string; writable: boolean; closesAt: string; photos: Photo[]; posts: Post[] }) {
   const router = useRouter();
@@ -30,6 +31,7 @@ export function MeetingRecordBoard({ recordId, title, dateLabel, writable, close
   const [editingPhotos, setEditingPhotos] = useState(false);
   const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => setPhotoItems(photos), [photos]);
@@ -79,32 +81,49 @@ export function MeetingRecordBoard({ recordId, title, dateLabel, writable, close
     finally { setBusy(false); }
   };
 
-  const upload = async (file?: File) => {
-    if (!file || !writable) return;
-    const normalizedType = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
-    const extension = ALLOWED_IMAGE_TYPES[normalizedType];
-    if (!extension) {
-      setError('JPG, JPEG, PNG, WebP 사진만 올릴 수 있어요.');
+  const upload = async (selectedFiles?: FileList | null) => {
+    if (!selectedFiles?.length || !writable || busy) return;
+    const files = Array.from(selectedFiles);
+    if (files.length > MAX_UPLOAD_COUNT) {
+      setError(`사진은 한 번에 최대 ${MAX_UPLOAD_COUNT}장까지 올릴 수 있어요.`);
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
-    if (file.size > MAX_IMAGE_SIZE) {
-      setError('사진은 한 장당 15MB 이하로 올려주세요.');
+    const invalidTypeCount = files.filter((file) => !ALLOWED_IMAGE_TYPES[file.type === 'image/jpg' ? 'image/jpeg' : file.type]).length;
+    const oversizedCount = files.filter((file) => file.size > MAX_IMAGE_SIZE).length;
+    if (invalidTypeCount || oversizedCount) {
+      const messages = [
+        invalidTypeCount ? `지원하지 않는 형식 ${invalidTypeCount}장` : '',
+        oversizedCount ? `15MB를 넘는 사진 ${oversizedCount}장` : '',
+      ].filter(Boolean);
+      setError(`${messages.join(', ')}이 있어요. JPG, JPEG, PNG, WebP 사진만 장당 15MB 이하로 선택해 주세요.`);
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
     setBusy(true); setError(null);
+    setUploadProgress({ current: 0, total: files.length });
+    let uploadedCount = 0;
+    const failures: string[] = [];
     try {
-      const target = await apiFetch<{ uploadUrl: string; fileUrl: string; storageKey: string }>('/uploads/presigned-url', {
-        method: 'POST', body: JSON.stringify({ contentType: normalizedType, extension }),
-      });
-      const uploaded = await fetch(target.uploadUrl, { method: 'PUT', headers: { 'Content-Type': normalizedType, 'x-upsert': 'false' }, body: file });
-      if (!uploaded.ok) throw new Error(`upload failed (${uploaded.status})`);
-      await apiFetch(`/meeting-records/${recordId}/photos`, { method: 'POST', body: JSON.stringify({ courseItemId: null, fileUrl: target.fileUrl, storageKey: target.storageKey, caption: caption.trim() || null }) });
-      setCaption(''); router.refresh();
-    } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : '사진 저장소에 업로드하지 못했어요. 잠시 후 다시 시도해 주세요.');
-    } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+      for (const [index, file] of files.entries()) {
+        const normalizedType = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
+        const extension = ALLOWED_IMAGE_TYPES[normalizedType]!;
+        try {
+          const target = await apiFetch<{ uploadUrl: string; fileUrl: string; storageKey: string }>('/uploads/presigned-url', {
+            method: 'POST', body: JSON.stringify({ contentType: normalizedType, extension }),
+          });
+          const uploaded = await fetch(target.uploadUrl, { method: 'PUT', headers: { 'Content-Type': normalizedType, 'x-upsert': 'false' }, body: file });
+          if (!uploaded.ok) throw new Error(`upload failed (${uploaded.status})`);
+          await apiFetch(`/meeting-records/${recordId}/photos`, { method: 'POST', body: JSON.stringify({ courseItemId: null, fileUrl: target.fileUrl, storageKey: target.storageKey, caption: caption.trim() || null }) });
+          uploadedCount += 1;
+        } catch (err) {
+          failures.push(err instanceof ApiClientError ? err.message : file.name);
+        }
+        setUploadProgress({ current: index + 1, total: files.length });
+      }
+      if (uploadedCount > 0) { setCaption(''); router.refresh(); }
+      if (failures.length > 0) setError(`${uploadedCount}장은 올렸고 ${failures.length}장은 실패했어요. 실패한 사진만 다시 선택해 주세요.`);
+    } finally { setBusy(false); setUploadProgress(null); if (fileRef.current) fileRef.current.value = ''; }
   };
 
   const addPost = async () => {
@@ -144,10 +163,11 @@ export function MeetingRecordBoard({ recordId, title, dateLabel, writable, close
         {writable && (
           <div className="mb-4 flex gap-2">
             <input className="field flex-1" value={caption} maxLength={300} onChange={(e) => setCaption(e.target.value)} placeholder="사진에 남길 한마디 (선택)" />
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} />
-            <button type="button" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-500 text-2xl font-light text-white shadow-card hover:bg-accent-600" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="사진 추가">+</button>
+            <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => void upload(e.target.files)} />
+            <button type="button" className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-500 px-3 text-white shadow-card hover:bg-accent-600" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="사진 최대 10장 추가">{uploadProgress ? <span className="text-xs font-bold">{uploadProgress.current}/{uploadProgress.total}</span> : <span className="text-2xl font-light">+</span>}</button>
           </div>
         )}
+        {writable && <p className="mb-3 text-xs text-ink-400">한 번에 최대 10장 · 사진 한 장당 15MB까지</p>}
         {editingPhotos && <div className="mb-3 rounded-2xl bg-white/80 px-4 py-3 text-xs text-ink-500 shadow-sm"><strong className="text-ink-700">사진을 꾹 눌러 드래그</strong>하면 순서를 바꿀 수 있어요. 삭제는 사진 오른쪽 위 버튼을 눌러주세요.</div>}
         <div className="mx-auto grid w-full max-w-3xl grid-cols-3 gap-1 overflow-hidden rounded-2xl bg-white p-1 shadow-card sm:gap-1.5 sm:p-1.5">
           {photoItems.map((photo, index) => <div key={photo.id} draggable={editingPhotos && !busy} onDragStart={() => setDraggedPhotoId(photo.id)} onDragEnd={() => setDraggedPhotoId(null)} onDragOver={(event) => editingPhotos && event.preventDefault()} onDrop={() => void movePhoto(photo.id)} className={`group relative aspect-square overflow-hidden bg-ink-100 transition ${editingPhotos ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${draggedPhotoId === photo.id ? 'scale-95 opacity-50' : ''}`}>
