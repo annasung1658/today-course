@@ -510,22 +510,23 @@ export function planCategories(input: CourseGenerationInput): Slot[] {
         .sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0));
       if (remaining.length === 0) break;
 
-      const availableMinutes = (hardLimit.getTime() - cursor.getTime()) / 60_000;
-      // 후보 목록에서 평균 체류시간이 남는 시간 안에 드는 것 → 없으면 최소 체류시간이라도
-      // 드는 것 순으로 고른다(선호도 순서는 그대로 유지). 평균이 안 맞아도 최소는 맞으면
-      // 카테고리를 바꾸지 않고 시간만 줄여서 쓴다 — 예를 들어 점심 밴드에 75분만 남으면
-      // 평균(80분)엔 못 미쳐도 최소(50분)는 넘으니, 카페로 바꾸는 대신 짧은 점심으로 채운다.
-      const pick = (categories: CourseItemCategory[]) =>
-        categories.find((c) => courseSlotPolicy.categoryDurationMinutes[c] <= availableMinutes) ??
-        categories.find((c) => courseSlotPolicy.categoryMinDurationMinutes[c] <= availableMinutes);
-
-      // 밴드 고유 카테고리를 (평균 → 최소 순으로) 다 시도해도 안 맞으면, 카페·산책처럼
-      // 여러 밴드에서 이미 짧고 유연한 끼워넣기용으로 쓰이는 카테고리로 대신 채운다.
+      // 선호도 1순위가 hardLimit에 안 맞으면 포기하지 않고, 그 안에 들어가는 카테고리가
+      // 있는지 순서대로 계속 찾는다 — 짧은 카테고리 하나면 충분히 들어갈 남는 시간을
+      // 첫 번째 후보가 안 맞는다는 이유만으로 통째로 날리지 않기 위해서다.
       const chosen =
-        pick(remaining) ?? pick(FILLER_CATEGORIES.filter((c) => !usedInBand.has(c) && !band.categories.includes(c)));
+        remaining.find(
+          (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
+        ) ??
+        // 밴드 고유 카테고리가 전부 안 맞으면(예: 11~14시 밴드는 LUNCH 하나뿐인데 다음 픽스
+        // 일정 버퍼 때문에 몇 분 모자람) 카페·산책처럼 여러 밴드에서 이미 짧고 유연한
+        // 끼워넣기용으로 쓰이는 카테고리로 남는 시간을 대신 채운다 — 그렇지 않으면 몇 분
+        // 차이로 카페 한 잔 마실 여유(예: 75분)를 통째로 날리게 된다(실제로 겪은 버그).
+        FILLER_CATEGORIES.filter((c) => !usedInBand.has(c) && !band.categories.includes(c)).find(
+          (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
+        );
       if (!chosen) break;
 
-      const durationMinutes = Math.min(courseSlotPolicy.categoryDurationMinutes[chosen], Math.floor(availableMinutes));
+      const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
       const slotEnd = new Date(cursor.getTime() + durationMinutes * 60_000);
 
       base.push({
@@ -543,10 +544,7 @@ export function planCategories(input: CourseGenerationInput): Slot[] {
     // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, hardLimit 도달 등) 점프
     // 목적지로 커서를 이동한다. 방금 넣은 항목이 이미 bandCutoff를 넘겼다면(밴드 경계를
     // 살짝 넘어 배치됨) 그대로 다음 루프에서 새 밴드/픽스 일정을 다시 판단한다.
-    // '<='여야 한다: 압축된 슬롯(availableMinutes 꽉 채움)은 cursor가 bandCutoff에
-    // 정확히 맞아떨어질 수 있는데, '<'로는 이 경우를 못 잡아 다음 반복에서 같은
-    // 밴드·같은 한계가 그대로 재계산되며 커서가 멈춰 무한루프에 빠진다(실제로 겪은 버그).
-    if (cursor.getTime() <= bandCutoff.getTime()) cursor = jumpTarget;
+    if (cursor.getTime() < bandCutoff.getTime()) cursor = jumpTarget;
   }
 
   // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.
