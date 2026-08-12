@@ -107,7 +107,6 @@ export function RecordStoryShare({ title, dateLabel, photos, posts }: { title: s
     ctx.textAlign = 'center';
     ctx.fillStyle = frame.ink; ctx.font = '800 62px system-ui, sans-serif';
     wrapText(ctx, title, 760, 2).forEach((line, index) => ctx.fillText(line, WIDTH / 2, 200 + index * 70));
-    ctx.fillStyle = frame.muted; ctx.font = '500 27px system-ui, sans-serif'; ctx.fillText('함께 남긴 우리의 지난 기록', WIDTH / 2, 315);
     ctx.textAlign = 'left';
 
     const images = (await Promise.all(photos.slice(0, 9).map(async (photo) => {
