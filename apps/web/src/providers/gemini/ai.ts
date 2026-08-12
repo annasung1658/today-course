@@ -542,9 +542,20 @@ export function planCategories(input: CourseGenerationInput): Slot[] {
     }
 
     // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, hardLimit 도달 등) 점프
-    // 목적지로 커서를 이동한다. 방금 넣은 항목이 이미 bandCutoff를 넘겼다면(밴드 경계를
+    // 목적지로 커서를 이동한다. 방금 넣은 항목이 이미 jumpTarget을 넘겼다면(밴드 경계를
     // 살짝 넘어 배치됨) 그대로 다음 루프에서 새 밴드/픽스 일정을 다시 판단한다.
-    if (cursor.getTime() < bandCutoff.getTime()) cursor = jumpTarget;
+    //
+    // bandCutoff가 아니라 jumpTarget과 비교해야 한다. bandEndAt/end/nextFixed.startAt은
+    // 항상 cursor보다 미래이지만(각각 cursor 기준 상대 계산, 루프 종료조건, 최상단
+    // FIXED-도달 체크로 보장됨) 픽스 버퍼로 깎인 bandCutoff 자체는 그렇지 않다 — 픽스
+    // 일정이 모임 시작 직후(예: 10분 뒤)처럼 아주 가까우면 45분 버퍼를 뺀 bandCutoff가
+    // 현재 cursor보다 더 과거로 계산될 수 있다. 그 상태에서 bandCutoff와 비교하면(<도
+    // <=도 마찬가지) cursor가 bandCutoff보다 항상 크므로 점프 조건이 절대 참이 되지
+    // 않고, 안쪽 while도 처음부터 안 돌아 아무 것도 못 채우면서 커서가 영원히 그대로
+    // 멈춰 무한루프에 빠진다(실제로 겪은 버그 — 픽스 일정이 촉박한 모임 몇 건이 코스
+    // 생성 중 상태로 하루 넘게 멈춰 있었다). jumpTarget은 항상 cursor보다 미래이므로
+    // 이 비교는 어떤 경우에도 안전하게 전진한다.
+    if (cursor.getTime() < jumpTarget.getTime()) cursor = jumpTarget;
   }
 
   // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.

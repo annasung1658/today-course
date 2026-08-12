@@ -114,4 +114,40 @@ describe('시나리오: 픽스 일정이 모임 시작보다 한참 뒤에 있�
     expect(beforeFixed.length).toBeGreaterThan(0);
     expect(beforeFixed.some((s) => s.category === 'CAFE' || s.category === 'WALK')).toBe(true);
   });
+
+  it('픽스 일정이 모임 시작 직후라 버퍼가 모임 시작보다 과거로 계산돼도 멈추지 않는다', () => {
+    // 실제로 겪은 버그(운영 DB에서 재현): 모임 시작 10분 뒤에 픽스 일정이 있으면,
+    // preFixedBufferMinutes(45분)를 뺀 한계가 모임 시작 시각보다도 더 과거로 계산된다.
+    // 그 상태에서 커서(모임 시작)는 그 한계보다 항상 미래라서 "아직 한계 전"이라는
+    // 조건이 절대 참이 되지 않아, 안쪽 while도 안 돌고 바깥 점프도 안 일어나 커서가
+    // 영원히 멈춘다 — 실제로 이 패턴의 모임 여러 건이 "코스 생성 중" 상태로 하루 넘게
+    // 멈춰 있었다. 이 테스트가 멈추지 않고 끝나는 것 자체가 회귀 검증이다.
+    const input = baseInput({
+      meeting: {
+        ...baseInput({}).meeting,
+        scheduledStartAt: new Date('2026-08-14T14:00:00+09:00'),
+        scheduledEndAt: new Date('2026-08-14T22:30:00+09:00'),
+      },
+      fixedSchedules: [
+        {
+          id: 'fixed-1',
+          title: '스파이더맨 영화',
+          startAt: new Date('2026-08-14T14:10:00+09:00'),
+          endAt: new Date('2026-08-14T15:50:00+09:00'),
+          placeName: 'CGV 강남',
+          address: null,
+          placeId: null,
+          latitude: null,
+          longitude: null,
+          category: 'ACTIVITY',
+        },
+      ],
+    });
+
+    const plan = planCategories(input);
+    const fixedIndex = plan.findIndex((s) => s.kind === 'FIXED');
+    expect(fixedIndex).toBeGreaterThan(-1);
+    // 버퍼가 모임 시작 전으로 잡아먹어서, 픽스 일정 전엔 아무 것도 못 들어가는 게 맞다.
+    expect(plan.slice(0, fixedIndex).length).toBe(0);
+  });
 });
