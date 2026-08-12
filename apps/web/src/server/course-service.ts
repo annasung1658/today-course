@@ -121,7 +121,18 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
     // AI는 후보를 고를 때 좌표를 모르고 이름·가격만 보고 고르기 때문에, 지역명은 같아도
     // 실제로는 멀리 떨어진 후보가 섞여 있으면 그대로 뽑혀 이동시간 상한(45분)에 걸릴 수
     // 있다 — 전체 후보 무게중심에서 너무 먼 것들은 미리 걸러낸다.
-    const places = filterByProximity(rawPlaces, rawPlaces, courseSlotPolicy.maxCandidateRadiusKm);
+    // 카테고리별로 따로 걸러야 한다: 전체를 한 번에 걸러내면, 특정 카테고리(예: 전시)의
+    // 후보가 우연히 무게중심에서 먼 쪽에 몰려있을 때 그 카테고리만 통째로 사라져서
+    // "추천할 수 있는 장소가 부족합니다" 실패로 이어질 수 있다(실제로 겪은 버그).
+    const placesByCategory = new Map<(typeof rawPlaces)[number]['category'], typeof rawPlaces>();
+    for (const place of rawPlaces) {
+      const list = placesByCategory.get(place.category) ?? [];
+      list.push(place);
+      placesByCategory.set(place.category, list);
+    }
+    const places = [...placesByCategory.values()].flatMap((group) =>
+      filterByProximity(group, rawPlaces, courseSlotPolicy.maxCandidateRadiusKm),
+    );
 
     const generated = await generateWithValidation({
       meeting: {
