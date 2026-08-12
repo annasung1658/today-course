@@ -220,11 +220,29 @@ export async function getCalendar(userId: string, year: number, month: number) {
       status: { in: ['CONFIRMED', 'COMPLETED'] },
       scheduledStartAt: { gte: from, lt: to },
     },
-    include: { record: { include: { photos: { take: 1 } } } },
+    include: {
+      record: {
+        include: {
+          photos: {
+            take: 4,
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, fileUrl: true },
+          },
+          _count: { select: { photos: true, posts: true } },
+        },
+      },
+    },
     orderBy: { scheduledStartAt: 'asc' },
   });
 
-  const grouped = new Map<string, Array<Record<string, unknown>>>();
+  const grouped = new Map<string, Array<{
+    recordId: string | null;
+    meetingId: string;
+    title: string;
+    photos: Array<{ id: string; fileUrl: string }>;
+    photoCount: number;
+    postCount: number;
+  }>>();
   for (const meeting of meetings) {
     const key = meeting.scheduledStartAt.toISOString().slice(0, 10);
     const list = grouped.get(key) ?? [];
@@ -232,7 +250,12 @@ export async function getCalendar(userId: string, year: number, month: number) {
       recordId: meeting.record?.id ?? null,
       meetingId: meeting.id,
       title: meeting.title,
-      thumbnailUrl: meeting.record?.photos[0]?.fileUrl ?? null,
+      photos: (meeting.record?.photos ?? []).map((photo: PrismaRow) => ({
+        id: photo.id,
+        fileUrl: photo.fileUrl,
+      })),
+      photoCount: meeting.record?._count.photos ?? 0,
+      postCount: meeting.record?._count.posts ?? 0,
     });
     grouped.set(key, list);
   }
