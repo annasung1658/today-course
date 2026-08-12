@@ -68,15 +68,19 @@ export function RecordStoryShare({ title, dateLabel, photos, posts }: { title: s
     ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.beginPath(); ctx.arc(920, 170, 260, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(112,184,242,.12)'; ctx.beginPath(); ctx.arc(80, 1710, 310, 0, Math.PI * 2); ctx.fill();
 
-    ctx.fillStyle = '#2f92e5'; ctx.font = '800 34px system-ui, sans-serif'; ctx.letterSpacing = '8px'; ctx.fillText('ONEUL COURSE', 76, 110);
-    ctx.fillStyle = '#111827'; ctx.font = '800 64px system-ui, sans-serif';
-    wrapText(ctx, title, 920, 2).forEach((line, index) => ctx.fillText(line, 76, 205 + index * 76));
-    ctx.fillStyle = '#65758b'; ctx.font = '500 30px system-ui, sans-serif'; ctx.fillText(`${dateLabel} · 우리의 지난 기록`, 78, 350);
+    const dateMatch = dateLabel.match(/(\d{1,2})월\s*(\d{1,2})일/);
+    const shortDate = dateMatch ? `${Number(dateMatch[1])}월 ${Number(dateMatch[2])}일` : dateLabel;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#2f92e5'; ctx.font = '800 29px system-ui, sans-serif'; ctx.letterSpacing = '8px'; ctx.fillText('ONEUL COURSE', WIDTH / 2, 100);
+    ctx.fillStyle = '#111827'; ctx.font = '800 58px system-ui, sans-serif';
+    wrapText(ctx, `${shortDate} · ${title}`, 900, 2).forEach((line, index) => ctx.fillText(line, WIDTH / 2, 190 + index * 70));
+    ctx.fillStyle = '#65758b'; ctx.font = '500 27px system-ui, sans-serif'; ctx.fillText('함께 남긴 우리의 지난 기록', WIDTH / 2, 315);
+    ctx.textAlign = 'left';
 
-    const images = (await Promise.all(photos.slice(0, 6).map(async (photo) => {
+    const images = (await Promise.all(photos.slice(0, 9).map(async (photo) => {
       try { return await loadImage(photo.fileUrl); } catch { return null; }
     }))).filter((image): image is HTMLImageElement => image !== null);
-    const galleryY = 410; const galleryHeight = 850; const gap = 12; const galleryWidth = 928; const cellWidth = (galleryWidth - gap * 2) / 3; const cellHeight = (galleryHeight - gap) / 2;
+    const galleryY = 365; const galleryHeight = 928; const gap = 10; const galleryWidth = 928; const cellWidth = (galleryWidth - gap * 2) / 3; const cellHeight = cellWidth;
     ctx.save(); roundedRect(ctx, 64, galleryY - 12, 952, galleryHeight + 24, 42); ctx.clip();
     ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillRect(64, galleryY - 12, 952, galleryHeight + 24);
     images.forEach((image, index) => cover(ctx, image, 76 + (index % 3) * (cellWidth + gap), galleryY + Math.floor(index / 3) * (cellHeight + gap), cellWidth, cellHeight));
@@ -89,15 +93,15 @@ export function RecordStoryShare({ title, dateLabel, photos, posts }: { title: s
     const memories = posts.flatMap((post) => [
       { nickname: post.author.nickname, content: post.content },
       ...post.comments.map((comment) => ({ nickname: comment.author.nickname, content: comment.content })),
-    ]).filter((memory) => memory.content.trim()).slice(0, 3);
-    let y = 1335;
+    ]).filter((memory) => memory.content.trim()).slice(0, 2);
+    let y = 1350;
     memories.forEach((memory) => {
       ctx.font = '700 25px system-ui, sans-serif';
       const lines = wrapText(ctx, memory.content, 790, 2);
-      const boxHeight = 72 + lines.length * 36;
+      const boxHeight = 68 + lines.length * 34;
       ctx.fillStyle = 'rgba(255,255,255,.84)'; roundedRect(ctx, 76, y, 928, boxHeight, 30); ctx.fill();
-      ctx.fillStyle = '#2f92e5'; ctx.fillText(memory.nickname, 108, y + 42);
-      ctx.fillStyle = '#253247'; ctx.font = '500 25px system-ui, sans-serif'; lines.forEach((line, index) => ctx.fillText(line, 108, y + 82 + index * 36));
+      ctx.fillStyle = '#2f92e5'; ctx.fillText(memory.nickname, 108, y + 39);
+      ctx.fillStyle = '#253247'; ctx.font = '500 25px system-ui, sans-serif'; lines.forEach((line, index) => ctx.fillText(line, 108, y + 76 + index * 34));
       y += boxHeight + 18;
     });
     ctx.fillStyle = '#66788e'; ctx.font = '600 25px system-ui, sans-serif'; ctx.fillText('오늘코스에서 함께 만든 우리의 추억', 76, 1830);
