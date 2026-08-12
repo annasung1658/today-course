@@ -35,7 +35,7 @@ export const generatedCourseItemSchema = z.object({
   endAt: isoDate,
   estimatedPricePerPerson: z.number().int().min(0).max(1_000_000),
   reason: z.string().min(1).max(500),
-  travelMinutesFromPrev: z.number().int().min(0).max(240),
+  travelMinutesFromPrev: z.number().int().min(0).max(45),
   fixedScheduleId: z.string().nullable(),
 });
 
