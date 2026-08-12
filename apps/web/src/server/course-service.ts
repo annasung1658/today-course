@@ -1,7 +1,7 @@
 import { after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
-import { aiPolicy, votingPolicy, calcVotingEndsAt, decideFinalize, validateFixedSchedulesPreserved, validateItemTimeline, closeResponses, eligibleVoterCount } from '@oneulcourse/core';
+import { aiPolicy, votingPolicy, calcVotingEndsAt, decideFinalize, validateFixedSchedulesPreserved, validateItemTimeline, closeResponses, eligibleVoterCount, courseSlotPolicy, filterByProximity } from '@oneulcourse/core';
 import { getAiProvider, getPlaceProvider } from '@/providers';
 import { loadAggregatedPreferences } from '@/server/voting-service';
 import { notify } from '@/server/notification-service';
@@ -108,16 +108,31 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
     // 대표 키워드 조합(2순위)으로 Provider가 알아서 대체한다.
     const topFood = aggregated.preferredFoods[0]?.tag;
     const topActivityKeyword = aggregated.activityKeywords[0];
-    const places = await getPlaceProvider().search({
+    const rawPlaces = await getPlaceProvider().search({
       area: meeting.areaName,
       limit: 100,
       categoryKeywords: {
         // "잠실 롯데백화점"처럼 구체적인 장소명은 SHOPPING으로 분류되는 경우가 많아
         // ACTIVITY와 함께 SHOPPING에도 같은 키워드를 적용한다.
         ...(topActivityKeyword ? { ACTIVITY: topActivityKeyword, SHOPPING: topActivityKeyword } : {}),
-        ...(topFood ? { LUNCH: topFood, DINNER: topFood } : {}),
+        ...(topFood ? { BREAKFAST: topFood, LUNCH: topFood, DINNER: topFood } : {}),
       },
     });
+    // AI는 후보를 고를 때 좌표를 모르고 이름·가격만 보고 고르기 때문에, 지역명은 같아도
+    // 실제로는 멀리 떨어진 후보가 섞여 있으면 그대로 뽑혀 이동시간 상한(45분)에 걸릴 수
+    // 있다 — 전체 후보 무게중심에서 너무 먼 것들은 미리 걸러낸다.
+    // 카테고리별로 따로 걸러야 한다: 전체를 한 번에 걸러내면, 특정 카테고리(예: 전시)의
+    // 후보가 우연히 무게중심에서 먼 쪽에 몰려있을 때 그 카테고리만 통째로 사라져서
+    // "추천할 수 있는 장소가 부족합니다" 실패로 이어질 수 있다(실제로 겪은 버그).
+    const placesByCategory = new Map<(typeof rawPlaces)[number]['category'], typeof rawPlaces>();
+    for (const place of rawPlaces) {
+      const list = placesByCategory.get(place.category) ?? [];
+      list.push(place);
+      placesByCategory.set(place.category, list);
+    }
+    const places = [...placesByCategory.values()].flatMap((group) =>
+      filterByProximity(group, rawPlaces, courseSlotPolicy.maxCandidateRadiusKm),
+    );
 
     const generated = await generateWithValidation({
       meeting: {
@@ -137,6 +152,11 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
         startAt: f.startAt,
         endAt: f.endAt,
         placeName: f.placeName,
+        address: f.address,
+        placeId: f.placeId,
+        latitude: f.latitude,
+        longitude: f.longitude,
+        category: f.category,
       })),
       availablePlaces: places,
       rejectedPlaceIds: rejected.map((r: PrismaRow) => r.placeId),
@@ -258,6 +278,7 @@ async function generateWithValidation(input: Parameters<ReturnType<typeof getAiP
         startAt: f.startAt,
         endAt: f.endAt,
         placeName: f.placeName,
+        category: f.category,
       })),
     );
     if (!fixedCheck.valid) {
@@ -271,7 +292,12 @@ async function generateWithValidation(input: Parameters<ReturnType<typeof getAiP
       continue;
     }
 
-    if (parsed.data.items.length < aiPolicy.minCourseItems) {
+    // aiPolicy.minCourseItems(3)는 planCategories가 목표로 삼는 기준일 뿐, 여기서 강제하는
+    // 하한은 아니다 — 픽스 일정이 안전하게 추천 가능한 시간대(23시까지)를 많이 차지하는
+    // 경우 3개를 못 채울 수 있는데, 이건 몇 번을 재시도해도 똑같이 반복되는 결정적인
+    // 제약이라 강제로 막으면 사용자가 영원히 "생성실패"만 보게 된다(실제로 겪은 버그).
+    // 항목이 하나도 없는 것만 막는다.
+    if (parsed.data.items.length === 0) {
       lastError = '추천할 수 있는 장소가 부족합니다.';
       continue;
     }

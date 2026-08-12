@@ -19,6 +19,8 @@
  * 즉 재투표 창은 "항목 단위로 더 짧게 닫히는 창"이지 코스 타이머가 아니다.
  */
 
+import type { CourseItemCategory } from '../domain/course';
+
 export const votingPolicy = {
   /** 1차 투표 창 길이(분). 코스 생성 완료 시점 기준. */
   initialWindowMinutes: 60,
@@ -51,9 +53,92 @@ export const interviewPolicy = {
 export const aiPolicy = {
   /** 스키마 검증 실패 시 재생성 시도 횟수. */
   maxValidationRetries: 3,
-  /** 한 코스에 담기는 항목 수 범위. */
+  /** 한 코스에 담기는 항목 수 범위(짧은 모임 기준 기본값). 긴 모임은 scaledMaxCourseItems로 늘어난다. */
   minCourseItems: 3,
   maxCourseItems: 6,
+  /** 아무리 긴 모임이라도 넘지 않는 절대 상한(스키마 검증 상한과 동일하게 맞춘다). */
+  hardMaxCourseItems: 10,
+} as const;
+
+/**
+ * 모임 길이에 비례해 코스 항목 상한을 늘린다.
+ * 기본 maxCourseItems(6개)는 2~3시간짜리 짧은 모임 기준이라, 훨씬 긴 모임(예: 11시간)에
+ * 그대로 적용하면 뒷시간대(저녁~새벽)가 항목 없이 통째로 비어버린다. 카테고리 평균
+ * 체류시간(courseSlotPolicy.categoryDurationMinutes 평균, 약 65분)으로 모임 길이를 나눠
+ * 필요한 항목 수를 추정하되, hardMaxCourseItems를 넘지 않는다.
+ */
+export function scaledMaxCourseItems(meetingDurationMinutes: number): number {
+  const averageItemMinutes = 65;
+  const scaled = Math.ceil(meetingDurationMinutes / averageItemMinutes);
+  return Math.min(aiPolicy.hardMaxCourseItems, Math.max(aiPolicy.maxCourseItems, scaled));
+}
+
+/**
+ * 시간대별 코스 슬롯 정책 (2026-08-12 확정).
+ *
+ * 약속의 시작~종료 시각을 이 시간대(밴드)들을 따라 훑으면서, 밴드 하나당 슬롯을
+ * 하나씩 만든다 — 밴드 폭이 넓어도(예: 14~17시) 그 안에서 여러 곳을 들르지 않고
+ * 딱 1곳만 고른 뒤 다음 밴드로 넘어간다. 그래야 "9시 시작 18시 종료"처럼 넓은
+ * 구간의 약속이 아침부터 저녁까지 자연스럽게 이어진다.
+ *
+ * 한 밴드에 카테고리가 여러 개면(예: 카페/산책/체험) 참가자들이 가장 많이 원한
+ * 카테고리를 고르고, 아무도 안 원했으면 배열에 적힌 순서상 첫 번째를 쓴다.
+ */
+export interface TimeBand {
+  startHour: number;
+  /** 배타적 경계. 마지막 밴드는 다음날 새벽까지 이어지도록 24를 넘겨(31=다음날 07시) 표기한다. */
+  endHour: number;
+  categories: CourseItemCategory[];
+}
+
+export const courseSlotPolicy = {
+  /**
+   * 마지막 밴드를 23시에서 끊는 이유: 실제 영업시간이 확인되지 않은 장소(카카오 데이터
+   * 대부분)는 안전하게 09:00~23:00 영업으로만 가정하고 그 밖은 "확인 불가"로 제외한다
+   * (course.ts의 FALLBACK_HOURS/CLOSED_AT_VISIT_TIME 참고). 밴드를 그 뒤로도 열어두면
+   * 안전 필터에 막혀 후보가 항상 0개가 되고 "장소가 부족합니다"로 생성이 실패한다
+   * (실제로 겪은 버그) — 밴드 경계는 실제로 안전하게 추천 가능한 시간까지만 잡는다.
+   */
+  timeBands: [
+    { startHour: 7, endHour: 9, categories: ['BREAKFAST'] },
+    { startHour: 9, endHour: 11, categories: ['CAFE', 'WALK', 'ACTIVITY'] },
+    { startHour: 11, endHour: 14, categories: ['LUNCH'] },
+    { startHour: 14, endHour: 17, categories: ['EXHIBITION', 'ACTIVITY', 'SHOPPING', 'WALK', 'CAFE'] },
+    { startHour: 17, endHour: 19, categories: ['DINNER'] },
+    { startHour: 19, endHour: 23, categories: ['CAFE', 'BAR', 'WALK'] },
+  ] as TimeBand[],
+  /** 카테고리별 평균 체류시간(분). */
+  categoryDurationMinutes: {
+    BREAKFAST: 60,
+    CAFE: 60,
+    LUNCH: 80,
+    DINNER: 90,
+    WALK: 50,
+    EXHIBITION: 60,
+    ACTIVITY: 60,
+    SHOPPING: 50,
+    BAR: 90,
+  } as Record<CourseItemCategory, number>,
+  /**
+   * 픽스 일정 시작 직전에 남겨두는 최소 이동시간 여유(분).
+   * 슬롯 배치는 이동시간을 모르는 채로(0분 가정) 계획을 짜고, 실제 이동시간은 장소가
+   * 정해진 뒤에야 계산된다. 여유 없이 픽스 일정 시작 시각까지 딱 맞춰 계획하면, 실제
+   * 이동시간이 조금만 있어도 바로 앞 슬롯이 픽스 일정 위로 밀려서 겹침 검증에 항상
+   * 실패한다(실제로 겪은 버그) — 그래서 계획 단계에서부터 이 여유를 미리 빼둔다.
+   * 시스템이 정상으로 허용하는 이동시간 상한(travelMinutesFromPrev 스키마 상한, 45분)보다
+   * 작으면 그 상한에 가까운 실제 이동시간에서 다시 같은 겹침 실패가 재발할 수 있으므로,
+   * 그 상한과 동일하게 맞춰 어떤 경우에도 침범이 생기지 않게 한다.
+   */
+  preFixedBufferMinutes: 45,
+  /**
+   * 장소 후보를 AI에게 보여주기 전에, 기준점 무게중심에서 이 반경(km) 밖의 후보는 미리
+   * 걸러낸다. AI는 후보를 고를 때 좌표를 전혀 모르고 이름·가격만 보고 고르기 때문에,
+   * 지역명 검색 결과에 실제로는 멀리 떨어진 곳이 섞여 있어도 그대로 뽑힐 수 있다.
+   * travelMinutesFromPrev 상한(45분, WALKING_TRANSIT 9km/h 기준 약 6.75km)을 안정적으로
+   * 지키려면, 두 후보가 최악의 경우(무게중심 기준 반대편)에도 그 안에 들어오게 반경을
+   * 절반보다 여유 있게 잡는다.
+   */
+  maxCandidateRadiusKm: 2.5,
 } as const;
 
 export const invitationPolicy = {

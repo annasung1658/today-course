@@ -7,6 +7,7 @@ import { meetingPolicy } from '@oneulcourse/core';
  */
 
 export const courseItemCategorySchema = z.enum([
+  'BREAKFAST',
   'CAFE',
   'LUNCH',
   'DINNER',
@@ -34,7 +35,7 @@ export const generatedCourseItemSchema = z.object({
   endAt: isoDate,
   estimatedPricePerPerson: z.number().int().min(0).max(1_000_000),
   reason: z.string().min(1).max(500),
-  travelMinutesFromPrev: z.number().int().min(0).max(240),
+  travelMinutesFromPrev: z.number().int().min(0).max(45),
   fixedScheduleId: z.string().nullable(),
 });
 
@@ -121,6 +122,7 @@ const fixedScheduleInputSchema = z.object({
   placeId: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  category: courseItemCategorySchema.default('ACTIVITY'),
 });
 
 export const createMeetingSchema = z

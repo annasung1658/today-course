@@ -4,13 +4,23 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
+import { categoryLabels } from '@/lib/format';
+import { PlaceSearchInput } from '@/components/place-search-input';
+import { DateTimeStepInput } from '@/components/date-time-step-input';
 
 interface FixedScheduleDraft {
   title: string;
   startAt: string;
   endAt: string;
   placeName: string;
+  address: string | null;
+  placeId: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  category: string;
 }
+
+const FIXED_SCHEDULE_CATEGORIES = Object.keys(categoryLabels) as Array<keyof typeof categoryLabels>;
 
 const RELATIONSHIPS = [
   { value: 'COUPLE', label: '연인' },
@@ -40,7 +50,7 @@ function isAllowedDateTime(value: string, minimum: string) {
 }
 
 /** 약속 만들기. 픽스 일정은 AI가 바꿀 수 없다는 점을 화면에서 분명히 말한다. */
-export function CreateMeetingForm() {
+export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string | null }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState('');
@@ -80,6 +90,11 @@ export function CreateMeetingForm() {
             startAt: new Date(f.startAt).toISOString(),
             endAt: new Date(f.endAt).toISOString(),
             placeName: f.placeName,
+            address: f.address ?? undefined,
+            placeId: f.placeId ?? undefined,
+            latitude: f.latitude ?? undefined,
+            longitude: f.longitude ?? undefined,
+            category: f.category,
           })),
         }),
       });
@@ -116,35 +131,29 @@ export function CreateMeetingForm() {
           <label className="label" htmlFor="startAt">
             시작
           </label>
-          <input
+          <DateTimeStepInput
             id="startAt"
-            type="datetime-local"
             min={minimumDateTime}
-            step={300}
-            className="field"
             value={startAt}
-            onChange={(e) => {
-              if (!isAllowedDateTime(e.target.value, minimumDateTime)) return;
-              setStartAt(e.target.value);
-              if (endAt && endAt < e.target.value) setEndAt('');
+            onChange={(next) => {
+              if (!isAllowedDateTime(next, minimumDateTime)) return;
+              setStartAt(next);
+              if (endAt && endAt < next) setEndAt('');
             }}
             required
           />
-          <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 5분 단위예요.</p>
+          <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 10분 단위예요.</p>
         </div>
         <div>
           <label className="label" htmlFor="endAt">
             종료
           </label>
-          <input
+          <DateTimeStepInput
             id="endAt"
-            type="datetime-local"
             min={startAt || minimumDateTime}
-            step={300}
-            className="field"
             value={endAt}
-            onChange={(e) => {
-              if (isAllowedDateTime(e.target.value, startAt || minimumDateTime)) setEndAt(e.target.value);
+            onChange={(next) => {
+              if (isAllowedDateTime(next, startAt || minimumDateTime)) setEndAt(next);
             }}
             required
           />
@@ -214,43 +223,62 @@ export function CreateMeetingForm() {
                 }
                 required
               />
-              <input
-                className="field"
-                placeholder="장소 이름"
+              <PlaceSearchInput
+                apiKey={kakaoJsKey}
                 value={schedule.placeName}
-                onChange={(e) =>
+                onSelect={(place) =>
                   setFixedSchedules((list) =>
-                    list.map((s, i) => (i === index ? { ...s, placeName: e.target.value } : s)),
+                    list.map((s, i) =>
+                      i === index
+                        ? {
+                            ...s,
+                            placeName: place.placeName,
+                            address: place.address,
+                            placeId: place.placeId,
+                            latitude: place.latitude,
+                            longitude: place.longitude,
+                          }
+                        : s,
+                    ),
                   )
                 }
-                required
               />
+              {kakaoJsKey && schedule.address && <p className="text-xs text-ink-500">{schedule.address}</p>}
+              <select
+                className="field"
+                value={schedule.category}
+                onChange={(e) =>
+                  setFixedSchedules((list) =>
+                    list.map((s, i) => (i === index ? { ...s, category: e.target.value } : s)),
+                  )
+                }
+              >
+                {FIXED_SCHEDULE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {categoryLabels[category]}
+                  </option>
+                ))}
+              </select>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
+                <DateTimeStepInput
                   min={startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={300}
-                  className="field"
                   value={schedule.startAt}
-                  onChange={(e) => {
-                    if (!isAllowedDateTime(e.target.value, startAt || minimumDateTime)) return;
+                  onChange={(next) => {
+                    if (!isAllowedDateTime(next, startAt || minimumDateTime)) return;
                     setFixedSchedules((list) => list.map((s, i) => i === index ? {
-                      ...s, startAt: e.target.value, endAt: s.endAt && s.endAt < e.target.value ? '' : s.endAt,
+                      ...s, startAt: next, endAt: s.endAt && s.endAt < next ? '' : s.endAt,
                     } : s));
                   }}
                   required
                 />
-                <input
-                  type="datetime-local"
+                <DateTimeStepInput
                   min={schedule.startAt || startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={300}
-                  className="field"
                   value={schedule.endAt}
-                  onChange={(e) => {
-                    if (!isAllowedDateTime(e.target.value, schedule.startAt || startAt || minimumDateTime)) return;
-                    setFixedSchedules((list) => list.map((s, i) => i === index ? { ...s, endAt: e.target.value } : s));
+                  onChange={(next) => {
+                    if (!isAllowedDateTime(next, schedule.startAt || startAt || minimumDateTime)) return;
+                    setFixedSchedules((list) => list.map((s, i) => i === index ? { ...s, endAt: next } : s));
                   }}
                   required
                 />
@@ -268,7 +296,20 @@ export function CreateMeetingForm() {
             type="button"
             className="btn-secondary"
             onClick={() =>
-              setFixedSchedules((list) => [...list, { title: '', startAt: '', endAt: '', placeName: '' }])
+              setFixedSchedules((list) => [
+                ...list,
+                {
+                  title: '',
+                  startAt: '',
+                  endAt: '',
+                  placeName: '',
+                  address: null,
+                  placeId: null,
+                  latitude: null,
+                  longitude: null,
+                  category: 'ACTIVITY',
+                },
+              ])
             }
           >
             일정 추가

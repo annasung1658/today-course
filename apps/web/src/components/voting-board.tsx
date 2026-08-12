@@ -356,7 +356,7 @@ function CourseItemCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="tnum text-sm font-bold text-ink-300">{item.sequence}</span>
             <span className="text-sm font-medium text-ink-500">
-              {categoryLabels[item.category] ?? item.category}
+              {categoryLabels[item.category as keyof typeof categoryLabels] ?? item.category}
             </span>
             {item.isFixedSchedule && <StatusChip>방장이 정한 일정</StatusChip>}
             {regenerating && <StatusChip tone="accent">다시 고르는 중</StatusChip>}

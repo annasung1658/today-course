@@ -47,6 +47,7 @@ export async function createMeeting(userId: string, input: z.infer<typeof create
             placeId: f.placeId,
             latitude: f.latitude,
             longitude: f.longitude,
+            category: f.category,
             locked: true,
           })),
         },
@@ -95,6 +96,7 @@ export interface MeetingDetail {
     endAt: string;
     placeName: string;
     address: string | null;
+    category: string;
     locked: boolean;
   }>;
   participants: Array<{
@@ -176,6 +178,7 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
       endAt: f.endAt.toISOString(),
       placeName: f.placeName,
       address: f.address,
+      category: f.category,
       locked: f.locked,
     })),
     // 다른 참여자에게는 제출 여부만 보인다. 인터뷰 원문은 절대 포함하지 않는다.
