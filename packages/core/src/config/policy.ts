@@ -53,10 +53,25 @@ export const interviewPolicy = {
 export const aiPolicy = {
   /** 스키마 검증 실패 시 재생성 시도 횟수. */
   maxValidationRetries: 3,
-  /** 한 코스에 담기는 항목 수 범위. */
+  /** 한 코스에 담기는 항목 수 범위(짧은 모임 기준 기본값). 긴 모임은 scaledMaxCourseItems로 늘어난다. */
   minCourseItems: 3,
   maxCourseItems: 6,
+  /** 아무리 긴 모임이라도 넘지 않는 절대 상한(스키마 검증 상한과 동일하게 맞춘다). */
+  hardMaxCourseItems: 10,
 } as const;
+
+/**
+ * 모임 길이에 비례해 코스 항목 상한을 늘린다.
+ * 기본 maxCourseItems(6개)는 2~3시간짜리 짧은 모임 기준이라, 훨씬 긴 모임(예: 11시간)에
+ * 그대로 적용하면 뒷시간대(저녁~새벽)가 항목 없이 통째로 비어버린다. 카테고리 평균
+ * 체류시간(courseSlotPolicy.categoryDurationMinutes 평균, 약 65분)으로 모임 길이를 나눠
+ * 필요한 항목 수를 추정하되, hardMaxCourseItems를 넘지 않는다.
+ */
+export function scaledMaxCourseItems(meetingDurationMinutes: number): number {
+  const averageItemMinutes = 65;
+  const scaled = Math.ceil(meetingDurationMinutes / averageItemMinutes);
+  return Math.min(aiPolicy.hardMaxCourseItems, Math.max(aiPolicy.maxCourseItems, scaled));
+}
 
 /**
  * 시간대별 코스 슬롯 정책 (2026-08-12 확정).

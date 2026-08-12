@@ -1,8 +1,8 @@
 import {
-  aiPolicy,
   courseSlotPolicy,
   filterPlaces,
   koreaTimeParts,
+  scaledMaxCourseItems,
 } from '@oneulcourse/core';
 import type { CourseItemCategory, PlaceCandidate, TimeBand } from '@oneulcourse/core';
 import type {
@@ -392,9 +392,11 @@ function findTimeBand(hour: number): TimeBand {
 
 /**
  * 약속 시작~종료 시각을 시간대 밴드를 따라 훑으면서 슬롯을 짠다.
- * 밴드 하나당 슬롯 하나만 만들고(넓은 밴드라도 여러 곳 안 들름), 밴드 끝 시각으로
- * 커서를 점프시켜 다음 밴드로 넘어간다 — 그래야 "9시 시작 18시 종료" 같은 넓은
- * 구간이 아침부터 저녁까지 자연스럽게 이어진다.
+ * 밴드 폭이 카테고리 체류시간보다 넓으면, 그 밴드 안에서 겹치지 않는 다른 카테고리로
+ * 남는 시간을 계속 채운다 — 그렇지 않으면 "전시 1시간만 하고 저녁까지 2시간 붕 뜸"처럼
+ * 일정에 설명되지 않는 빈 구간이 생긴다. 밴드의 카테고리를 다 썼거나(같은 밴드에서
+ * 카테고리를 반복하지는 않는다) 남은 시간이 부족해지면 밴드 끝 시각으로 커서를 점프해
+ * 다음 밴드로 넘어간다.
  */
 function planCategories(input: CourseGenerationInput): Slot[] {
   const activityTally = new Map(input.aggregated.preferredActivities.map((a) => [a.tag, a.count]));
@@ -402,29 +404,39 @@ function planCategories(input: CourseGenerationInput): Slot[] {
   const base: Slot[] = [];
   let cursor = new Date(input.meeting.scheduledStartAt);
   const end = input.meeting.scheduledEndAt;
+  const maxItems = scaledMaxCourseItems((end.getTime() - cursor.getTime()) / 60_000);
 
-  while (cursor.getTime() < end.getTime() && base.length < aiPolicy.maxCourseItems) {
+  while (cursor.getTime() < end.getTime() && base.length < maxItems) {
     const { hour, minute } = koreaTimeParts(cursor);
     const band = findTimeBand(hour);
-
-    // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 고르고, 아무도 안 원했으면(전부 0)
-    // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
-    const chosen = [...band.categories].sort(
-      (a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0),
-    )[0]!;
-
-    base.push({
-      kind: 'PLACE',
-      category: chosen,
-      durationMinutes: courseSlotPolicy.categoryDurationMinutes[chosen],
-      // 이 슬롯이 속한 밴드에 들어선 시각 — 실제 시각 배정 때 여기보다 앞당겨지지 않게 한다.
-      targetStartAt: new Date(cursor),
-    });
-
-    // 이 밴드는 한 번만 쓰고, 밴드 끝 시각으로 점프해 다음 밴드로 넘어간다.
     const normalizedHour = hour < 7 ? hour + 24 : hour;
-    const minutesToBandEnd = (band.endHour - normalizedHour) * 60 - minute;
-    cursor = new Date(cursor.getTime() + minutesToBandEnd * 60_000);
+    const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
+    const fillUntil = new Date(Math.min(bandEndAt.getTime(), end.getTime()));
+
+    const usedInBand = new Set<CourseItemCategory>();
+    while (cursor.getTime() < fillUntil.getTime() && base.length < maxItems) {
+      const remaining = band.categories.filter((c) => !usedInBand.has(c));
+      if (remaining.length === 0) break;
+
+      // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 고르고, 아무도 안 원했으면(전부 0)
+      // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
+      const chosen = remaining.sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0))[0]!;
+      const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
+
+      base.push({
+        kind: 'PLACE',
+        category: chosen,
+        durationMinutes,
+        // 이 슬롯이 속한 밴드에 들어선 시각 — 실제 시각 배정 때 여기보다 앞당겨지지 않게 한다.
+        targetStartAt: new Date(cursor),
+      });
+      usedInBand.add(chosen);
+      cursor = new Date(cursor.getTime() + durationMinutes * 60_000);
+    }
+
+    // 밴드 카테고리를 다 썼는데도 밴드 시간이 남았으면 다음 밴드로 넘어가기 위해
+    // 밴드 끝 시각으로 커서를 점프한다(이미 밴드 끝을 넘겼으면 그대로 둔다).
+    if (cursor.getTime() < bandEndAt.getTime()) cursor = bandEndAt;
   }
 
   const fixedSlots: Slot[] = input.fixedSchedules.map((fixed) => ({ kind: 'FIXED', fixed }));

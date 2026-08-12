@@ -411,18 +411,15 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
 
     const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: course.meetingId } });
     const aggregated = await loadAggregatedPreferences(course.meetingId);
-    // 식사 카테고리는 참가자가 가장 많이 답한 음식 키워드로, 쇼핑은 구체적으로 말한 장소
-    // 키워드("잠실 롯데백화점" 등)로 검색해야 검색 단계에서부터 반영된다 — 그렇지 않으면
-    // 후보군 자체에 안 걸려서 AI가 관계없는 곳 중에서 고를 수밖에 없다.
+    // 식사 카테고리는 참가자가 가장 많이 답한 음식 키워드로, 그 외 카테고리(체험·쇼핑 등)는
+    // 구체적으로 말한 장소 키워드("도자기 공방", "잠실 롯데백화점" 등)로 검색해야 검색
+    // 단계에서부터 반영된다 — 그렇지 않으면 후보군 자체에 안 걸려서 AI가 관계없는 곳 중에서
+    // 고를 수밖에 없다.
     const isMealCategory =
       constraints.category === 'BREAKFAST' || constraints.category === 'LUNCH' || constraints.category === 'DINNER';
     const topFood = aggregated.preferredFoods[0]?.tag;
     const topActivityKeyword = aggregated.activityKeywords[0];
-    const regenerationQuery = isMealCategory
-      ? topFood
-      : constraints.category === 'SHOPPING'
-        ? topActivityKeyword
-        : undefined;
+    const regenerationQuery = isMealCategory ? topFood : topActivityKeyword;
     const places = await getPlaceProvider().search({
       area: course.meeting.areaName,
       category: constraints.category,
