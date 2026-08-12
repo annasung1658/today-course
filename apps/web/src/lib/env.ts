@@ -7,6 +7,10 @@ import { z } from 'zod';
  */
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** Vercel이 배포 시 자동 주입. 프리뷰 빌드도 NODE_ENV는 항상 'production'이라(Next.js가
+   * next build 시 그렇게 고정한다) 진짜 운영 배포인지는 이 값으로만 구분할 수 있다. Vercel
+   * 밖에서 도는 경우(로컬 등)엔 없다. */
+  VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
   DATABASE_URL: z.string().min(1).default('postgresql://oneulcourse:oneulcourse@localhost:5432/oneulcourse'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   /** 세션 서명 키. 운영에서는 반드시 교체한다. */
@@ -33,9 +37,16 @@ const schema = z.object({
  * .env.example에 그대로 공개되어 있다 — 운영 환경에서 설정을 깜빡하면 누구나
  * 세션을 위조하거나(AUTH_SECRET) 내부 스케줄러를 호출(CRON_SECRET)할 수 있게
  * 조용히 뚫린다. 운영에서는 기본값이면 부팅 자체를 막는다.
+ *
+ * "운영"인지는 VERCEL_ENV로 판단한다(있으면). NODE_ENV로 판단하면 안 된다 — Vercel은
+ * 프리뷰 배포도 next build를 그대로 쓰기 때문에 NODE_ENV가 항상 'production'이라, 그
+ * 기준으로는 dev를 포함한 모든 브랜치 프리뷰까지 이 검증에 걸려 부팅 자체가 실패한다
+ * (실제로 겪은 버그). Vercel 밖(로컬 production 빌드 등)에서는 VERCEL_ENV가 없으니
+ * NODE_ENV로 대신 판단한다.
  */
 const withProductionSecretCheck = schema.superRefine((value, ctx) => {
-  if (value.NODE_ENV !== 'production') return;
+  const isRealProduction = value.VERCEL_ENV ? value.VERCEL_ENV === 'production' : value.NODE_ENV === 'production';
+  if (!isRealProduction) return;
   if (value.AUTH_SECRET === 'dev-only-secret-change-me-please') {
     ctx.addIssue({ code: 'custom', path: ['AUTH_SECRET'], message: '운영 환경에서는 기본값을 쓸 수 없습니다. openssl rand -base64 32로 새로 발급하세요.' });
   }

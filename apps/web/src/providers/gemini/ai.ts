@@ -544,7 +544,11 @@ export function planCategories(input: CourseGenerationInput): Slot[] {
     // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, hardLimit 도달 등) 점프
     // 목적지로 커서를 이동한다. 방금 넣은 항목이 이미 bandCutoff를 넘겼다면(밴드 경계를
     // 살짝 넘어 배치됨) 그대로 다음 루프에서 새 밴드/픽스 일정을 다시 판단한다.
-    if (cursor.getTime() < bandCutoff.getTime()) cursor = jumpTarget;
+    // '<='여야 한다: 방금 넣은 항목의 slotEnd가 bandCutoff에 정확히 맞아떨어지면(예:
+    // hardLimit까지 딱 맞는 카테고리) cursor === bandCutoff가 되는데, '<'로는 이 경우를
+    // 못 잡아 다음 반복에서 같은 밴드·같은 한계가 그대로 재계산되며 커서가 멈춰
+    // 무한루프에 빠진다(실제로 겪을 뻔한 버그).
+    if (cursor.getTime() <= bandCutoff.getTime()) cursor = jumpTarget;
   }
 
   // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.
