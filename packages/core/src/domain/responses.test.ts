@@ -8,7 +8,14 @@ import {
   type ExtractedPreference,
   type ParticipantSnapshot,
 } from './responses';
-import { filterPlaces, validateFixedSchedulesPreserved, validateItemTimeline, buildRegenerationConstraints } from './course';
+import {
+  filterPlaces,
+  validateFixedSchedulesPreserved,
+  validateItemTimeline,
+  buildRegenerationConstraints,
+  filterByProximity,
+  haversineKm,
+} from './course';
 import type { PlaceCandidate } from './course';
 
 const participant = (id: string, status: ParticipantSnapshot['status']): ParticipantSnapshot => ({
@@ -307,5 +314,37 @@ describe('부분 재생성 제약', () => {
     expect(c?.previousPlaceId).toBe('p1');
     expect(c?.nextPlaceId).toBe('p3');
     expect(c?.lockedPlaceIds).toEqual(['p1', 'p3']);
+  });
+});
+
+describe('장소 근접 필터', () => {
+  // 성수동 근처 좌표들
+  const seongsu1 = { latitude: 37.5445, longitude: 127.0557 };
+  const seongsu2 = { latitude: 37.5421, longitude: 127.0554 };
+  // 강남역 근처(성수동에서 직선거리로 약 8km 이상 떨어져 있음)
+  const gangnam = { latitude: 37.4979, longitude: 127.0276 };
+
+  it('무게중심에서 반경 밖의 후보는 걸러낸다', () => {
+    const candidates = [
+      { placeId: 'near', ...seongsu2 },
+      { placeId: 'far', ...gangnam },
+    ];
+    const result = filterByProximity(candidates, [seongsu1], 2.5);
+    expect(result.map((c) => c.placeId)).toEqual(['near']);
+  });
+
+  it('필터링하면 후보가 하나도 안 남으면 원본을 그대로 돌려준다', () => {
+    const candidates = [{ placeId: 'far', ...gangnam }];
+    const result = filterByProximity(candidates, [seongsu1], 2.5);
+    expect(result).toEqual(candidates);
+  });
+
+  it('기준점이 없으면 원본을 그대로 돌려준다', () => {
+    const candidates = [{ placeId: 'a', ...seongsu1 }];
+    expect(filterByProximity(candidates, [], 2.5)).toEqual(candidates);
+  });
+
+  it('같은 좌표끼리는 거리가 0이다', () => {
+    expect(haversineKm(seongsu1, seongsu1)).toBe(0);
   });
 });

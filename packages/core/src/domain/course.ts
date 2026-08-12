@@ -31,6 +31,45 @@ export interface PlaceCandidate {
   averagePricePerPerson: number;
 }
 
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+}
+
+/** 두 좌표 사이의 직선거리(km). */
+export function haversineKm(a: GeoPoint, b: GeoPoint): number {
+  const R = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * 기준점들(anchors)의 무게중심에서 너무 먼 후보를 미리 걸러낸다.
+ * AI는 후보를 고를 때 좌표·거리를 전혀 모르고 이름·가격만 보고 고르기 때문에,
+ * 검색 결과에 지역명은 같아도 실제로는 멀리 떨어진 곳이 섞여 있으면 그대로
+ * 뽑힐 수 있다 — 이동시간 상한(schemas.ts의 travelMinutesFromPrev)에 걸려
+ * 검증 실패만 반복하는 걸 막으려면 애초에 후보 단계에서 빼두는 게 낫다.
+ * anchors가 비어 있거나 필터링으로 후보가 하나도 안 남으면 원본을 그대로 돌려준다
+ * (과도하게 걸러서 후보가 아예 없어지는 것보다 낫다).
+ */
+export function filterByProximity<T extends GeoPoint>(
+  candidates: T[],
+  anchors: GeoPoint[],
+  maxKm: number,
+): T[] {
+  if (anchors.length === 0) return candidates;
+  const center: GeoPoint = {
+    latitude: anchors.reduce((sum, p) => sum + p.latitude, 0) / anchors.length,
+    longitude: anchors.reduce((sum, p) => sum + p.longitude, 0) / anchors.length,
+  };
+  const filtered = candidates.filter((c) => haversineKm(center, c) <= maxKm);
+  return filtered.length > 0 ? filtered : candidates;
+}
+
 export interface PlaceFilterContext {
   aggregated: AggregatedPreference;
   /** 이 약속에서 이미 거절된 장소 */

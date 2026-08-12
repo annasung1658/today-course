@@ -120,6 +120,15 @@ export const courseSlotPolicy = {
    * 실패한다(실제로 겪은 버그) — 그래서 계획 단계에서부터 이 여유를 미리 빼둔다.
    */
   preFixedBufferMinutes: 15,
+  /**
+   * 장소 후보를 AI에게 보여주기 전에, 기준점 무게중심에서 이 반경(km) 밖의 후보는 미리
+   * 걸러낸다. AI는 후보를 고를 때 좌표를 전혀 모르고 이름·가격만 보고 고르기 때문에,
+   * 지역명 검색 결과에 실제로는 멀리 떨어진 곳이 섞여 있어도 그대로 뽑힐 수 있다.
+   * travelMinutesFromPrev 상한(45분, WALKING_TRANSIT 9km/h 기준 약 6.75km)을 안정적으로
+   * 지키려면, 두 후보가 최악의 경우(무게중심 기준 반대편)에도 그 안에 들어오게 반경을
+   * 절반보다 여유 있게 잡는다.
+   */
+  maxCandidateRadiusKm: 2.5,
 } as const;
 
 export const invitationPolicy = {

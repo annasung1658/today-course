@@ -6,7 +6,9 @@ import {
   buildRegenerationConstraints,
   calcItemRevoteEndsAt,
   canVoteOnItem,
+  courseSlotPolicy,
   decideRegeneration,
+  filterByProximity,
   isStaleVote,
   itemVotingPhase,
   haveAllEligibleVoted,
@@ -423,12 +425,18 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
     const topFood = aggregated.preferredFoods[0]?.tag;
     const topActivityKeyword = aggregated.activityKeywords[0];
     const regenerationQuery = isMealCategory ? topFood : isKeywordCategory ? topActivityKeyword : undefined;
-    const places = await getPlaceProvider().search({
+    const rawPlaces = await getPlaceProvider().search({
       area: course.meeting.areaName,
       category: constraints.category,
       limit: 30,
       query: regenerationQuery,
     });
+    // 새로 뽑을 장소는 이 코스에 이미 들어있는 다른 장소들 근처여야 한다 — 안 그러면
+    // 지역명은 같아도 실제로는 멀리 떨어진 곳이 뽑혀 이동시간 상한(45분)에 걸릴 수 있다.
+    const anchors = course.items
+      .filter((i: PrismaRow) => i.id !== oldItem.id && i.status !== 'REPLACED' && i.latitude !== null && i.longitude !== null)
+      .map((i: PrismaRow) => ({ latitude: i.latitude as number, longitude: i.longitude as number }));
+    const places = filterByProximity(rawPlaces, anchors, courseSlotPolicy.maxCandidateRadiusKm);
 
     const generated = await getAiProvider().regenerateItem({
       meetingTitle: course.meeting.title,

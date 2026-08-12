@@ -1,7 +1,7 @@
 import { after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
-import { aiPolicy, votingPolicy, calcVotingEndsAt, decideFinalize, validateFixedSchedulesPreserved, validateItemTimeline, closeResponses, eligibleVoterCount } from '@oneulcourse/core';
+import { aiPolicy, votingPolicy, calcVotingEndsAt, decideFinalize, validateFixedSchedulesPreserved, validateItemTimeline, closeResponses, eligibleVoterCount, courseSlotPolicy, filterByProximity } from '@oneulcourse/core';
 import { getAiProvider, getPlaceProvider } from '@/providers';
 import { loadAggregatedPreferences } from '@/server/voting-service';
 import { notify } from '@/server/notification-service';
@@ -108,7 +108,7 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
     // 대표 키워드 조합(2순위)으로 Provider가 알아서 대체한다.
     const topFood = aggregated.preferredFoods[0]?.tag;
     const topActivityKeyword = aggregated.activityKeywords[0];
-    const places = await getPlaceProvider().search({
+    const rawPlaces = await getPlaceProvider().search({
       area: meeting.areaName,
       limit: 100,
       categoryKeywords: {
@@ -118,6 +118,10 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
         ...(topFood ? { BREAKFAST: topFood, LUNCH: topFood, DINNER: topFood } : {}),
       },
     });
+    // AI는 후보를 고를 때 좌표를 모르고 이름·가격만 보고 고르기 때문에, 지역명은 같아도
+    // 실제로는 멀리 떨어진 후보가 섞여 있으면 그대로 뽑혀 이동시간 상한(45분)에 걸릴 수
+    // 있다 — 전체 후보 무게중심에서 너무 먼 것들은 미리 걸러낸다.
+    const places = filterByProximity(rawPlaces, rawPlaces, courseSlotPolicy.maxCandidateRadiusKm);
 
     const generated = await generateWithValidation({
       meeting: {
