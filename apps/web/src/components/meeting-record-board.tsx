@@ -121,7 +121,8 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
       </div>
       {error && <ErrorNotice message={error} />}
 
-      <section>
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:gap-6 xl:gap-8">
+      <section className="min-w-0 lg:sticky lg:top-24">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div><h2 className="text-lg font-extrabold">함께 찍은 사진</h2><p className="mt-0.5 text-xs text-ink-400">우리만의 순간을 한눈에 모아봐요.</p></div>
           <div className="flex items-center gap-2"><span className="text-sm text-ink-400">{photoItems.length}장</span>{writable && photoItems.length > 0 && <button type="button" className={editingPhotos ? 'rounded-full bg-ink-800 px-3 py-1.5 text-xs font-bold text-white' : 'rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-bold text-ink-600 hover:border-accent-300 hover:text-accent-600'} onClick={() => setEditingPhotos((value) => !value)}>{editingPhotos ? '완료' : '사진 편집'}</button>}</div>
@@ -145,13 +146,14 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
         {photoItems.length === 0 && <p className="rounded-2xl bg-white p-10 text-center text-sm text-ink-400">아직 등록된 사진이 없어요.</p>}
       </section>
 
-      <section>
+      <section className="min-w-0">
         <h2 className="mb-3 text-lg font-extrabold">우리의 이야기</h2>
         {writable && <div className="card mb-4 p-4"><textarea className="field min-h-24 resize-none" value={post} maxLength={2000} onChange={(e) => setPost(e.target.value)} placeholder="오늘의 기억을 글로 남겨주세요." /><div className="mt-2 flex justify-end"><button type="button" className="btn-primary" onClick={addPost} disabled={busy || !post.trim()}>게시</button></div></div>}
         <div className="space-y-4">
           {posts.map((item) => <article key={item.id} className="card overflow-hidden"><div className="border-b border-ink-100 px-4 py-3 font-bold">{item.author.nickname}</div><p className="whitespace-pre-wrap px-4 py-4 text-sm leading-relaxed text-ink-700">{item.content}</p><div className="space-y-2 border-t border-ink-100 bg-ink-50/50 px-4 py-3">{item.comments.map((reply) => <p key={reply.id} className="text-sm"><strong className="mr-2">{reply.author.nickname}</strong><span className="text-ink-600">{reply.content}</span></p>)}{writable && <div className="flex gap-2 pt-1"><input className="field h-10 flex-1" value={comment[item.id] ?? ''} onChange={(e) => setComment((value) => ({ ...value, [item.id]: e.target.value }))} placeholder="댓글 달기..." /><button type="button" className="text-sm font-bold text-accent-600" onClick={() => addComment(item.id)}>게시</button></div>}</div></article>)}
         </div>
       </section>
+      </div>
 
       {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onMouseDown={(e) => e.target === e.currentTarget && setSelected(null)}><div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white"><div className="relative h-[65vh] max-h-[680px] w-full bg-black"><Image src={selected.fileUrl} alt={selected.caption ?? '약속 사진'} fill unoptimized className="object-contain" /></div><div className="p-4"><strong>{selected.author.nickname}</strong>{selected.caption && <p className="mt-1 text-sm text-ink-600">{selected.caption}</p>}</div></div></div>}
     </div>
