@@ -163,6 +163,12 @@ export class GeminiAiProvider implements AiProvider {
         },
       );
       if (accepted.length > 0) flexibleSlots.push({ index, slot, accepted });
+      else {
+        console.error('[course-generation] slot has zero candidates', {
+          category: slot.category,
+          totalAvailableForCategory: input.availablePlaces.filter((p) => p.category === slot.category).length,
+        });
+      }
       roughCursor = endAt;
     });
 
