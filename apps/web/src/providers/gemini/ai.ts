@@ -1,8 +1,10 @@
 import {
+  aiPolicy,
+  courseSlotPolicy,
   filterPlaces,
   koreaTimeParts,
 } from '@oneulcourse/core';
-import type { CourseItemCategory, PlaceCandidate } from '@oneulcourse/core';
+import type { CourseItemCategory, PlaceCandidate, TimeBand } from '@oneulcourse/core';
 import type {
   AiProvider,
   CourseGenerationInput,
@@ -12,7 +14,7 @@ import type {
   PreferenceExtractionOutput,
 } from '@/providers/types';
 import { categoryLabel } from '../mock/ai';
-import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
+import { MockRouteProvider } from '../mock/place';
 
 /**
  * Gemini 3.5 Flash-Lite 기반 실제 AI Provider.
@@ -60,7 +62,6 @@ async function callGemini<T>(params: {
 
 export class GeminiAiProvider implements AiProvider {
   readonly name = 'gemini';
-  private places = new MockPlaceProvider();
   private routes = new MockRouteProvider();
 
   constructor(
@@ -294,8 +295,7 @@ export class GeminiAiProvider implements AiProvider {
   }
 
   async regenerateItem(input: ItemRegenerationInput): Promise<GeneratedCourseItem> {
-    const candidates = await this.places.search({ area: input.areaName, category: input.target.category, limit: 30 });
-    const pool = [...candidates, ...input.availablePlaces].filter((p) => p.category === input.target.category);
+    const pool = input.availablePlaces.filter((p) => p.category === input.target.category);
     const { accepted } = filterPlaces(pool, {
       aggregated: input.aggregated,
       rejectedPlaceIds: input.rejectedPlaceIds,
@@ -378,39 +378,43 @@ type Slot =
   | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
 
+/** hour(0~23)가 속한 시간대 밴드를 찾는다. 자정 넘은 시각(0~6시)은 전날 밤 밴드의 연장으로 본다. */
+function findTimeBand(hour: number): TimeBand {
+  const normalized = hour < 7 ? hour + 24 : hour;
+  const bands = courseSlotPolicy.timeBands;
+  return bands.find((b) => normalized >= b.startHour && normalized < b.endHour) ?? bands[bands.length - 1]!;
+}
+
+/**
+ * 약속 시작~종료 시각을 시간대 밴드를 따라 훑으면서 슬롯을 짠다.
+ * 밴드 하나당 슬롯 하나만 만들고(넓은 밴드라도 여러 곳 안 들름), 밴드 끝 시각으로
+ * 커서를 점프시켜 다음 밴드로 넘어간다 — 그래야 "9시 시작 18시 종료" 같은 넓은
+ * 구간이 아침부터 저녁까지 자연스럽게 이어진다.
+ */
 function planCategories(input: CourseGenerationInput): Slot[] {
-  const startHour = koreaTimeParts(input.meeting.scheduledStartAt).hour;
-  const activityTags = input.aggregated.preferredActivities.map((a) => a.tag);
+  const activityTally = new Map(input.aggregated.preferredActivities.map((a) => [a.tag, a.count]));
 
   const base: Slot[] = [];
-  if (startHour < 15) {
-    base.push({ kind: 'PLACE', category: 'LUNCH', durationMinutes: 80 });
-    base.push({ kind: 'PLACE', category: 'CAFE', durationMinutes: 60 });
-  } else {
-    base.push({ kind: 'PLACE', category: 'CAFE', durationMinutes: 60 });
-    base.push({ kind: 'PLACE', category: 'DINNER', durationMinutes: 90 });
-  }
+  let cursor = new Date(input.meeting.scheduledStartAt);
+  const end = input.meeting.scheduledEndAt;
 
-  let extraAdded = false;
-  if (activityTags.includes('EXHIBITION')) {
-    base.push({ kind: 'PLACE', category: 'EXHIBITION', durationMinutes: 60 });
-    extraAdded = true;
+  while (cursor.getTime() < end.getTime() && base.length < aiPolicy.maxCourseItems) {
+    const { hour, minute } = koreaTimeParts(cursor);
+    const band = findTimeBand(hour);
+
+    // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 고르고, 아무도 안 원했으면(전부 0)
+    // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
+    const chosen = [...band.categories].sort(
+      (a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0),
+    )[0]!;
+
+    base.push({ kind: 'PLACE', category: chosen, durationMinutes: courseSlotPolicy.categoryDurationMinutes[chosen] });
+
+    // 이 밴드는 한 번만 쓰고, 밴드 끝 시각으로 점프해 다음 밴드로 넘어간다.
+    const normalizedHour = hour < 7 ? hour + 24 : hour;
+    const minutesToBandEnd = (band.endHour - normalizedHour) * 60 - minute;
+    cursor = new Date(cursor.getTime() + minutesToBandEnd * 60_000);
   }
-  if (activityTags.includes('SHOPPING')) {
-    base.push({ kind: 'PLACE', category: 'SHOPPING', durationMinutes: 50 });
-    extraAdded = true;
-  }
-  if (activityTags.includes('BAR')) {
-    base.push({ kind: 'PLACE', category: 'BAR', durationMinutes: 90 });
-    extraAdded = true;
-  }
-  if (activityTags.includes('ACTIVITY')) {
-    base.push({ kind: 'PLACE', category: 'ACTIVITY', durationMinutes: 60 });
-    extraAdded = true;
-  }
-  // 위 태그 중 아무것도 안 걸렸으면(예: CAFE만 선호) 최소 코스 개수(aiPolicy.minCourseItems)를
-  // 못 채우니 산책을 기본값으로 넣는다.
-  if (activityTags.includes('WALK') || !extraAdded) base.push({ kind: 'PLACE', category: 'WALK', durationMinutes: 50 });
 
   const fixedSlots: Slot[] = input.fixedSchedules.map((fixed) => ({ kind: 'FIXED', fixed }));
   return [...base, ...fixedSlots].sort((a, b) => {

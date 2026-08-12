@@ -21,6 +21,7 @@ const KAKAO_KEYWORD_ENDPOINT = 'https://dapi.kakao.com/v2/local/search/keyword.j
  * 좁게 매칭해서 결과가 0건이 되기 쉽다 — 합치지 않고 하나씩 순서대로 시도한다.
  */
 const CATEGORY_KEYWORD_MAP: Record<CourseItemCategory, string[]> = {
+  BREAKFAST: ['브런치', '조식'],
   CAFE: ['카페'],
   LUNCH: ['맛집'],
   DINNER: ['맛집'],

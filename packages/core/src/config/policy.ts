@@ -19,6 +19,8 @@
  * 즉 재투표 창은 "항목 단위로 더 짧게 닫히는 창"이지 코스 타이머가 아니다.
  */
 
+import type { CourseItemCategory } from '../domain/course';
+
 export const votingPolicy = {
   /** 1차 투표 창 길이(분). 코스 생성 완료 시점 기준. */
   initialWindowMinutes: 60,
@@ -54,6 +56,47 @@ export const aiPolicy = {
   /** 한 코스에 담기는 항목 수 범위. */
   minCourseItems: 3,
   maxCourseItems: 6,
+} as const;
+
+/**
+ * 시간대별 코스 슬롯 정책 (2026-08-12 확정).
+ *
+ * 약속의 시작~종료 시각을 이 시간대(밴드)들을 따라 훑으면서, 밴드 하나당 슬롯을
+ * 하나씩 만든다 — 밴드 폭이 넓어도(예: 14~17시) 그 안에서 여러 곳을 들르지 않고
+ * 딱 1곳만 고른 뒤 다음 밴드로 넘어간다. 그래야 "9시 시작 18시 종료"처럼 넓은
+ * 구간의 약속이 아침부터 저녁까지 자연스럽게 이어진다.
+ *
+ * 한 밴드에 카테고리가 여러 개면(예: 카페/산책/체험) 참가자들이 가장 많이 원한
+ * 카테고리를 고르고, 아무도 안 원했으면 배열에 적힌 순서상 첫 번째를 쓴다.
+ */
+export interface TimeBand {
+  startHour: number;
+  /** 배타적 경계. 마지막 밴드는 다음날 새벽까지 이어지도록 24를 넘겨(31=다음날 07시) 표기한다. */
+  endHour: number;
+  categories: CourseItemCategory[];
+}
+
+export const courseSlotPolicy = {
+  timeBands: [
+    { startHour: 7, endHour: 9, categories: ['BREAKFAST'] },
+    { startHour: 9, endHour: 11, categories: ['CAFE', 'WALK', 'ACTIVITY'] },
+    { startHour: 11, endHour: 14, categories: ['LUNCH'] },
+    { startHour: 14, endHour: 17, categories: ['EXHIBITION', 'ACTIVITY', 'SHOPPING', 'WALK', 'CAFE'] },
+    { startHour: 17, endHour: 19, categories: ['DINNER'] },
+    { startHour: 19, endHour: 31, categories: ['CAFE', 'BAR', 'WALK'] },
+  ] as TimeBand[],
+  /** 카테고리별 평균 체류시간(분). */
+  categoryDurationMinutes: {
+    BREAKFAST: 60,
+    CAFE: 60,
+    LUNCH: 80,
+    DINNER: 90,
+    WALK: 50,
+    EXHIBITION: 60,
+    ACTIVITY: 60,
+    SHOPPING: 50,
+    BAR: 90,
+  } as Record<CourseItemCategory, number>,
 } as const;
 
 export const invitationPolicy = {

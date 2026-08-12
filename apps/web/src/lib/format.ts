@@ -35,6 +35,7 @@ export function formatCurrency(won: number): string {
 }
 
 export const categoryLabels: Record<string, string> = {
+  BREAKFAST: '아침식사',
   CAFE: '카페',
   LUNCH: '점심',
   DINNER: '저녁식사',

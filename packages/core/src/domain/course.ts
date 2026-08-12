@@ -3,6 +3,7 @@ import { AggregatedPreference } from './responses';
 /** 코스 후보 장소 필터링과 픽스 일정 보존 규칙. */
 
 export type CourseItemCategory =
+  | 'BREAKFAST'
   | 'CAFE'
   | 'LUNCH'
   | 'DINNER'
@@ -151,7 +152,9 @@ export function filterPlaces(candidates: PlaceCandidate[], ctx: PlaceFilterConte
 }
 
 export function isFoodCategory(category: CourseItemCategory): boolean {
-  return category === 'LUNCH' || category === 'DINNER' || category === 'CAFE' || category === 'BAR';
+  return (
+    category === 'BREAKFAST' || category === 'LUNCH' || category === 'DINNER' || category === 'CAFE' || category === 'BAR'
+  );
 }
 
 export interface FixedScheduleSlot {

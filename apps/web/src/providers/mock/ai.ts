@@ -369,6 +369,7 @@ import type { CourseItemCategory } from '@oneulcourse/core';
 
 export function categoryLabel(category: CourseItemCategory): string {
   const labels: Record<CourseItemCategory, string> = {
+    BREAKFAST: '아침식사',
     CAFE: '카페',
     LUNCH: '점심',
     DINNER: '저녁식사',

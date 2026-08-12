@@ -7,6 +7,7 @@ import { meetingPolicy } from '@oneulcourse/core';
  */
 
 export const courseItemCategorySchema = z.enum([
+  'BREAKFAST',
   'CAFE',
   'LUNCH',
   'DINNER',

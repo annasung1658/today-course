@@ -9,7 +9,6 @@ import type {
 } from './types';
 // 로컬 개발용 Mock 폴백 비활성화(실험) — AI/장소는 항상 실제 Provider(Gemini/카카오)만 쓴다.
 // import { MockAiProvider } from './mock/ai';
-// import { MockPlaceProvider } from './mock/place';
 import { MockRouteProvider } from './mock/place';
 import { DisabledKakaoAuthProvider, MockNotificationProvider, MockStorageProvider } from './mock/misc';
 import { KakaoAuthProvider } from './kakao/auth';
@@ -42,9 +41,8 @@ export function getAiProvider(): AiProvider {
 
 export function getPlaceProvider(): PlaceProvider {
   if (!placeSingleton) {
-    // placeSingleton = env.KAKAO_REST_API_KEY
-    //   ? new KakaoPlaceProvider(env.KAKAO_REST_API_KEY)
-    //   : new MockPlaceProvider();
+    // MockPlaceProvider(성수동 하드코딩 데이터)는 area를 무시하고 항상 같은 곳을 반환해
+    // 다른 지역 모임에 엉뚱한 장소가 섞이는 버그가 있어 완전히 삭제했다 — 더 이상 폴백이 없다.
     placeSingleton = new KakaoPlaceProvider(env.KAKAO_REST_API_KEY!);
   }
   return placeSingleton;

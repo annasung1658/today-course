@@ -115,7 +115,7 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
         // "잠실 롯데백화점"처럼 구체적인 장소명은 SHOPPING으로 분류되는 경우가 많아
         // ACTIVITY와 함께 SHOPPING에도 같은 키워드를 적용한다.
         ...(topActivityKeyword ? { ACTIVITY: topActivityKeyword, SHOPPING: topActivityKeyword } : {}),
-        ...(topFood ? { LUNCH: topFood, DINNER: topFood } : {}),
+        ...(topFood ? { BREAKFAST: topFood, LUNCH: topFood, DINNER: topFood } : {}),
       },
     });
 
