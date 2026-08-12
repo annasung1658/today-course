@@ -258,21 +258,19 @@ export class GeminiAiProvider implements AiProvider {
       })
       .join('\n\n');
 
-    return this.call<{ picks: Array<{ slotIndex: number; placeId: string; reason: string }>; title: string; summary: string }>(
+     return this.call<{ picks: Array<{ slotIndex: number; placeId: string; reason: string }>; title: string; summary: string }>(
       '너는 모임 코스 하루 전체를 한 번에 설계하는 플래너야. ' +
+        '전달 받은 일정 시작시간과 마감시간을 꼭 준수해줘. 오후 11시까지이면 오후 9시도 아니고 오후 10시도 아닌 오후 11시에 끝났으면 좋겠어. ' +
         '슬롯마다 주어진 후보 목록 중에서만 딱 하나씩 골라야 해(목록에 없는 placeId를 만들면 안 돼). ' +
         '슬롯 순서와 카테고리는 이미 정해져 있으니 바꾸지 마. ' +
         '하루 전체 흐름을 보고 골라 — 예를 들어 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
         '비선호 음식과 겹치는 후보는 이름에서 확실히 드러나는 경우 피해줘. ' +
-        '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 ' +
-        '포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘. ' +
         '마지막으로 이 코스 전체에 어울리는 제목과 1문장 소개도 한국어로 지어줘.',
       `지역: ${input.meeting.areaName}\n` +
         `분위기 태그: ${input.meeting.atmosphereTags.join(', ') || '없음'}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
         `비선호 음식: ${aggregated.dislikedFoods.join(', ') || '없음'}\n` +
         `선호 분위기: ${aggregated.preferredAtmospheres.map((a) => a.tag).join(', ') || '없음'}\n` +
-        `참가자가 구체적으로 말한 장소/키워드: ${aggregated.activityKeywords.join(', ') || '없음'}\n` +
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n\n` +
         `${slotsText}`,
       {
