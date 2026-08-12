@@ -15,6 +15,7 @@ import { DisabledKakaoAuthProvider, MockNotificationProvider, MockStorageProvide
 import { KakaoAuthProvider } from './kakao/auth';
 import { KakaoPlaceProvider } from './kakao/place';
 import { GeminiAiProvider } from './gemini/ai';
+import { SupabaseStorageProvider } from './supabase/storage';
 
 /**
  * Provider 레지스트리. 애플리케이션 코드는 언제나 이 함수들만 부른다.
@@ -61,7 +62,11 @@ export function getNotificationProvider(): NotificationProvider {
 }
 
 export function getStorageProvider(): StorageProvider {
-  if (!storageSingleton) storageSingleton = new MockStorageProvider();
+  if (!storageSingleton) {
+    storageSingleton = env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
+      ? new SupabaseStorageProvider(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, env.SUPABASE_STORAGE_BUCKET)
+      : new MockStorageProvider();
+  }
   return storageSingleton;
 }
 

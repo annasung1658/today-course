@@ -10,6 +10,13 @@ type Photo = { id: string; fileUrl: string; caption: string | null; author: { ni
 type Comment = { id: string; content: string; author: { nickname: string }; createdAt: string };
 type Post = { id: string; content: string; author: { nickname: string }; createdAt: string; comments: Comment[] };
 
+const ALLOWED_IMAGE_TYPES: Record<string, 'jpg' | 'jpeg' | 'png' | 'webp'> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+
 export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts }: { recordId: string; writable: boolean; closesAt: string; photos: Photo[]; posts: Post[] }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -22,18 +29,29 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
 
   const upload = async (file?: File) => {
     if (!file || !writable) return;
+    const normalizedType = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
+    const extension = ALLOWED_IMAGE_TYPES[normalizedType];
+    if (!extension) {
+      setError('JPG, JPEG, PNG, WebP 사진만 올릴 수 있어요.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setError('사진은 한 장당 15MB 이하로 올려주세요.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
     setBusy(true); setError(null);
     try {
-      const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
       const target = await apiFetch<{ uploadUrl: string; fileUrl: string; storageKey: string }>('/uploads/presigned-url', {
-        method: 'POST', body: JSON.stringify({ contentType: file.type || 'image/jpeg', extension }),
+        method: 'POST', body: JSON.stringify({ contentType: normalizedType, extension }),
       });
-      const uploaded = await fetch(target.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file });
-      if (!uploaded.ok) throw new Error('upload failed');
+      const uploaded = await fetch(target.uploadUrl, { method: 'PUT', headers: { 'Content-Type': normalizedType, 'x-upsert': 'false' }, body: file });
+      if (!uploaded.ok) throw new Error(`upload failed (${uploaded.status})`);
       await apiFetch(`/meeting-records/${recordId}/photos`, { method: 'POST', body: JSON.stringify({ courseItemId: null, fileUrl: target.fileUrl, storageKey: target.storageKey, caption: caption.trim() || null }) });
       setCaption(''); router.refresh();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : '사진을 업로드하지 못했어요.');
+      setError(err instanceof ApiClientError ? err.message : '사진 저장소에 업로드하지 못했어요. 잠시 후 다시 시도해 주세요.');
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
@@ -69,7 +87,7 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
         {writable && (
           <div className="mb-4 flex gap-2">
             <input className="field flex-1" value={caption} maxLength={300} onChange={(e) => setCaption(e.target.value)} placeholder="사진에 남길 한마디 (선택)" />
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} />
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} />
             <button type="button" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-500 text-2xl font-light text-white shadow-card hover:bg-accent-600" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="사진 추가">+</button>
           </div>
         )}

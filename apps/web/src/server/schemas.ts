@@ -259,6 +259,6 @@ export const feedbackDraftSchema = z.object({
 });
 
 export const presignedUploadSchema = z.object({
-  contentType: z.string().min(1),
-  extension: z.string().min(1).max(5),
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  extension: z.enum(['jpg', 'jpeg', 'png', 'webp']),
 });
