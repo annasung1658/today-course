@@ -134,7 +134,7 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
             id="startAt"
             type="datetime-local"
             min={minimumDateTime}
-            step={300}
+            step={600}
             className="field"
             value={startAt}
             onChange={(e) => {
@@ -144,7 +144,7 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
             }}
             required
           />
-          <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 5분 단위예요.</p>
+          <p className="mt-1.5 text-xs text-ink-400">오늘부터 선택할 수 있고, 시간은 10분 단위예요.</p>
         </div>
         <div>
           <label className="label" htmlFor="endAt">
@@ -154,7 +154,7 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
             id="endAt"
             type="datetime-local"
             min={startAt || minimumDateTime}
-            step={300}
+            step={600}
             className="field"
             value={endAt}
             onChange={(e) => {
@@ -269,7 +269,7 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
                   type="datetime-local"
                   min={startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={300}
+                  step={600}
                   className="field"
                   value={schedule.startAt}
                   onChange={(e) => {
@@ -284,7 +284,7 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
                   type="datetime-local"
                   min={schedule.startAt || startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={300}
+                  step={600}
                   className="field"
                   value={schedule.endAt}
                   onChange={(e) => {
