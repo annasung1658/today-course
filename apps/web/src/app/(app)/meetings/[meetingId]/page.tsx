@@ -7,6 +7,8 @@ import { SectionHeading, StatusChip } from '@/components/ui';
 import { InviteLink } from '@/components/invite-link';
 import { CourseGenerationButton, GeneratingWatcher } from '@/components/course-generation-button';
 import { MeetingHostActions } from '@/components/meeting-host-actions';
+import { CourseSummaryShare } from '@/components/course-summary-share';
+import { getSharedCourseSummary } from '@/server/course-share-service';
 
 interface PageProps {
   params: Promise<{ meetingId: string }>;
@@ -25,6 +27,9 @@ export default async function MeetingDetailPage({ params }: PageProps) {
   const submitted = meeting.participants.filter((p) => p.status === 'INTERVIEW_COMPLETED').length;
   const total = meeting.participants.filter((p) => p.status !== 'DECLINED').length;
   const needsMyResponse = myParticipant?.status !== 'INTERVIEW_COMPLETED';
+  const confirmedCourse = meeting.currentCourse?.status === 'CONFIRMED'
+    ? await getSharedCourseSummary(meeting.currentCourse.courseId)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -63,12 +68,15 @@ export default async function MeetingDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {meeting.currentCourse && meeting.status === 'CONFIRMED' && (
+      {meeting.currentCourse && confirmedCourse && meeting.status !== 'CANCELLED' && (
         <div className="card p-5">
           <p className="font-semibold">코스가 확정됐어요</p>
-          <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
-            확정된 코스 보기
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
+              확정된 코스 보기
+            </Link>
+            <CourseSummaryShare course={confirmedCourse} />
+          </div>
         </div>
       )}
 
