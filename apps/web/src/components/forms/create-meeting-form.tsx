@@ -4,13 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
+import { categoryLabels } from '@/lib/format';
 
 interface FixedScheduleDraft {
   title: string;
   startAt: string;
   endAt: string;
   placeName: string;
+  category: string;
 }
+
+const FIXED_SCHEDULE_CATEGORIES = Object.keys(categoryLabels) as Array<keyof typeof categoryLabels>;
 
 const RELATIONSHIPS = [
   { value: 'COUPLE', label: '연인' },
@@ -80,6 +84,7 @@ export function CreateMeetingForm() {
             startAt: new Date(f.startAt).toISOString(),
             endAt: new Date(f.endAt).toISOString(),
             placeName: f.placeName,
+            category: f.category,
           })),
         }),
       });
@@ -225,6 +230,21 @@ export function CreateMeetingForm() {
                 }
                 required
               />
+              <select
+                className="field"
+                value={schedule.category}
+                onChange={(e) =>
+                  setFixedSchedules((list) =>
+                    list.map((s, i) => (i === index ? { ...s, category: e.target.value } : s)),
+                  )
+                }
+              >
+                {FIXED_SCHEDULE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {categoryLabels[category]}
+                  </option>
+                ))}
+              </select>
               <div className="grid gap-2 sm:grid-cols-2">
                 <input
                   type="datetime-local"
@@ -268,7 +288,10 @@ export function CreateMeetingForm() {
             type="button"
             className="btn-secondary"
             onClick={() =>
-              setFixedSchedules((list) => [...list, { title: '', startAt: '', endAt: '', placeName: '' }])
+              setFixedSchedules((list) => [
+                ...list,
+                { title: '', startAt: '', endAt: '', placeName: '', category: 'ACTIVITY' },
+              ])
             }
           >
             일정 추가

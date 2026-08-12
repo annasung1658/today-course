@@ -162,6 +162,7 @@ export interface FixedScheduleSlot {
   startAt: Date;
   endAt: Date;
   placeName: string;
+  category: CourseItemCategory;
 }
 
 export interface DraftCourseItem {
@@ -174,7 +175,7 @@ export interface DraftCourseItem {
 }
 
 /**
- * AI가 픽스 일정을 삭제하거나 시간·장소를 바꾸지 않았는지 검증한다.
+ * AI가 픽스 일정을 삭제하거나 시간·장소·카테고리를 바꾸지 않았는지 검증한다.
  * 하나라도 어긋나면 결과 전체를 버리고 재생성한다.
  */
 export function validateFixedSchedulesPreserved(
@@ -191,6 +192,9 @@ export function validateFixedSchedulesPreserved(
     }
     if (match.startAt.getTime() !== fixed.startAt.getTime() || match.endAt.getTime() !== fixed.endAt.getTime()) {
       violations.push(`픽스 일정 시간 변경: ${fixed.placeName}`);
+    }
+    if (match.category !== fixed.category) {
+      violations.push(`픽스 일정 카테고리 변경: ${fixed.placeName}`);
     }
   }
 

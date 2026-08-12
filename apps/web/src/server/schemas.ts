@@ -122,6 +122,7 @@ const fixedScheduleInputSchema = z.object({
   placeId: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  category: courseItemCategorySchema.default('ACTIVITY'),
 });
 
 export const createMeetingSchema = z

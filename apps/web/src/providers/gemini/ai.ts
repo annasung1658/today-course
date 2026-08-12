@@ -177,7 +177,7 @@ export class GeminiAiProvider implements AiProvider {
       if (fixed) {
         items.push({
           sequence: items.length + 1,
-          category: 'ACTIVITY',
+          category: fixed.fixed.category,
           title: fixed.fixed.title,
           placeId: null,
           placeName: fixed.fixed.placeName,

@@ -203,6 +203,7 @@ describe('픽스 일정 보존', () => {
     startAt: new Date('2026-08-15T19:00:00Z'),
     endAt: new Date('2026-08-15T21:00:00Z'),
     placeName: 'CGV 왕십리',
+    category: 'ACTIVITY' as const,
   };
 
   it('픽스 일정을 삭제하면 검증에 실패한다', () => {
@@ -227,6 +228,24 @@ describe('픽스 일정 보존', () => {
     );
     expect(result.valid).toBe(false);
     expect(result.violations[0]).toContain('시간 변경');
+  });
+
+  it('픽스 일정 카테고리를 바꾸면 검증에 실패한다', () => {
+    const result = validateFixedSchedulesPreserved(
+      [
+        {
+          sequence: 1,
+          category: 'DINNER',
+          startAt: fixed.startAt,
+          endAt: fixed.endAt,
+          placeId: null,
+          fixedScheduleId: 'fix_1',
+        },
+      ],
+      [fixed],
+    );
+    expect(result.valid).toBe(false);
+    expect(result.violations[0]).toContain('카테고리 변경');
   });
 
   it('그대로 유지하면 통과한다', () => {

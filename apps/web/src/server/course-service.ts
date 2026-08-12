@@ -137,6 +137,7 @@ export async function runCourseGeneration(jobId: string): Promise<void> {
         startAt: f.startAt,
         endAt: f.endAt,
         placeName: f.placeName,
+        category: f.category,
       })),
       availablePlaces: places,
       rejectedPlaceIds: rejected.map((r: PrismaRow) => r.placeId),
@@ -258,6 +259,7 @@ async function generateWithValidation(input: Parameters<ReturnType<typeof getAiP
         startAt: f.startAt,
         endAt: f.endAt,
         placeName: f.placeName,
+        category: f.category,
       })),
     );
     if (!fixedCheck.valid) {
