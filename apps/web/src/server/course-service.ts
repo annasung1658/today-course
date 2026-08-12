@@ -288,7 +288,12 @@ async function generateWithValidation(input: Parameters<ReturnType<typeof getAiP
       continue;
     }
 
-    if (parsed.data.items.length < aiPolicy.minCourseItems) {
+    // aiPolicy.minCourseItems(3)는 planCategories가 목표로 삼는 기준일 뿐, 여기서 강제하는
+    // 하한은 아니다 — 픽스 일정이 안전하게 추천 가능한 시간대(23시까지)를 많이 차지하는
+    // 경우 3개를 못 채울 수 있는데, 이건 몇 번을 재시도해도 똑같이 반복되는 결정적인
+    // 제약이라 강제로 막으면 사용자가 영원히 "생성실패"만 보게 된다(실제로 겪은 버그).
+    // 항목이 하나도 없는 것만 막는다.
+    if (parsed.data.items.length === 0) {
       lastError = '추천할 수 있는 장소가 부족합니다.';
       continue;
     }
