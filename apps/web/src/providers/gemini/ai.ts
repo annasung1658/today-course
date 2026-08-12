@@ -400,7 +400,7 @@ export class GeminiAiProvider implements AiProvider {
 
 // ── 내부 헬퍼 (mock/ai.ts의 planCategories와 동일한 규칙) ─────────────
 
-type Slot =
+export type Slot =
   | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number; targetStartAt: Date }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
 
@@ -428,7 +428,7 @@ function findTimeBand(hour: number): TimeBand | null {
  * 배치돼 두 항목의 시간이 겹치는 채로 저장되고, 겹침 검증(validateItemTimeline)에서
  * 매번 재시도만 반복하다 결국 생성이 실패한다(실제로 겪은 버그).
  */
-function planCategories(input: CourseGenerationInput): Slot[] {
+export function planCategories(input: CourseGenerationInput): Slot[] {
   const activityTally = new Map(input.aggregated.preferredActivities.map((a) => [a.tag, a.count]));
   const fixedSorted = [...input.fixedSchedules].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
   // 밴드가 픽스 일정에 끊겨도(중간에 다른 걸 끼우고 이어져도) 같은 밴드로 취급해
@@ -470,32 +470,53 @@ function planCategories(input: CourseGenerationInput): Slot[] {
     }
     const normalizedHour = hour < 7 ? hour + 24 : hour;
     const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
-    // 다음 경계(밴드 끝/모임 종료/다음 픽스 일정 시작 중 가장 이른 시각) — 커서는 결국 여기까지 진행한다.
-    const boundaryTimes = [bandEndAt.getTime(), end.getTime()];
-    if (nextFixed) boundaryTimes.push(nextFixed.startAt.getTime());
-    const boundary = new Date(Math.min(...boundaryTimes));
-    // 다음 경계가 픽스 일정 시작이면, 실제 이동시간이 붙을 걸 감안해 그 직전에 여유를 남기고
-    // 그 여유 구간 안으로는 새 슬롯을 안 채운다 — 안 그러면 이동시간 때문에 슬롯이 픽스
-    // 일정 위로 밀려서 겹침 검증에 항상 실패한다(실제로 겪은 버그).
-    const fillLimit =
-      nextFixed && boundary.getTime() === nextFixed.startAt.getTime()
-        ? new Date(boundary.getTime() - courseSlotPolicy.preFixedBufferMinutes * 60_000)
-        : boundary;
+    // 다음 픽스 일정 시작 전 이동시간 여유(preFixedBufferMinutes)를 뺀, 실제로 항목을
+    // 배치해도 되는 절대 한계. 밴드 끝(bandEndAt)은 여기 안 끼운다 — 밴드 끝은 "이 밴드
+    // 카테고리로 새 항목을 몇 개 더 시작할지"를 정할 뿐, 이미 고른 항목의 체류시간을
+    // 끊는 기준이 아니다. 밴드 끝을 그대로 한계로 쓰면, 밴드 경계에 걸쳐 애매하게 남는
+    // 좁은 틈(예: 60분)에 정확히 안 맞는 항목이 통째로 버려지고 그 시간대가 텅 빈다
+    // (실제로 겪은 버그 — 픽스 일정 훨씬 전인데 그 직전까지 아무 것도 안 채워짐).
+    const fixedBufferedStart = nextFixed
+      ? new Date(nextFixed.startAt.getTime() - courseSlotPolicy.preFixedBufferMinutes * 60_000)
+      : null;
+    const hardLimit =
+      fixedBufferedStart && fixedBufferedStart.getTime() < end.getTime() ? fixedBufferedStart : end;
+
+    // "새 항목을 시작할 수 있는" 한계와, 거기서 막히면 커서가 점프할 목적지를 함께 정한다.
+    // 셋 중 가장 이른 시각이 이긴다 — 밴드 자연 종료면 다음 밴드로, hardLimit이 모임
+    // 종료면 그대로 끝으로, hardLimit이 픽스 버퍼 구간이면 그 여유 구간을 건너뛰고
+    // 픽스 일정 시작 시각(버퍼 미적용)으로 바로 점프한다. 버퍼로 깎인 hardLimit을
+    // 점프 목적지로 쓰면 다음 루프에서 다시 같은 자리로 계산돼 커서가 멈춰버린다.
+    const jumpCandidates: Array<{ limit: Date; jumpTo: Date }> = [
+      { limit: bandEndAt, jumpTo: bandEndAt },
+      { limit: end, jumpTo: end },
+    ];
+    if (fixedBufferedStart) jumpCandidates.push({ limit: fixedBufferedStart, jumpTo: nextFixed!.startAt });
+    jumpCandidates.sort((a, b) => a.limit.getTime() - b.limit.getTime());
+    const bandCutoff = jumpCandidates[0]!.limit;
+    const jumpTarget = jumpCandidates[0]!.jumpTo;
 
     const usedInBand = usedByBand.get(band.startHour) ?? new Set<CourseItemCategory>();
     usedByBand.set(band.startHour, usedInBand);
 
-    while (cursor.getTime() < fillLimit.getTime() && placeCount < maxItems) {
-      const remaining = band.categories.filter((c) => !usedInBand.has(c));
+    while (cursor.getTime() < bandCutoff.getTime() && placeCount < maxItems) {
+      // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 우선하고, 아무도 안
+      // 원했으면(전부 0) sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
+      const remaining = band.categories
+        .filter((c) => !usedInBand.has(c))
+        .sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0));
       if (remaining.length === 0) break;
 
-      // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 고르고, 아무도 안 원했으면(전부 0)
-      // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
-      const chosen = remaining.sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0))[0]!;
+      // 선호도 1순위가 hardLimit에 안 맞으면 포기하지 않고, 그 안에 들어가는 카테고리가
+      // 있는지 순서대로 계속 찾는다 — 짧은 카테고리 하나면 충분히 들어갈 남는 시간을
+      // 첫 번째 후보가 안 맞는다는 이유만으로 통째로 날리지 않기 위해서다.
+      const chosen = remaining.find(
+        (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
+      );
+      if (!chosen) break;
+
       const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
       const slotEnd = new Date(cursor.getTime() + durationMinutes * 60_000);
-      // 이 슬롯을 넣으면 이동시간 여유까지 포함한 한계를 넘겨버리면 여기서 멈춘다.
-      if (slotEnd.getTime() > fillLimit.getTime()) break;
 
       base.push({
         kind: 'PLACE',
@@ -509,10 +530,10 @@ function planCategories(input: CourseGenerationInput): Slot[] {
       cursor = slotEnd;
     }
 
-    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, 이동시간 여유 확보 등) 다음
-    // 경계(밴드 끝 또는 다음 픽스 일정 시작 중 이른 쪽)로 커서를 점프한다. 여유 구간이
-    // 남아있어도 boundary까지 그대로 진행해야 다음 루프에서 픽스 일정이 바로 끼워진다.
-    if (cursor.getTime() < boundary.getTime()) cursor = boundary;
+    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, hardLimit 도달 등) 점프
+    // 목적지로 커서를 이동한다. 방금 넣은 항목이 이미 bandCutoff를 넘겼다면(밴드 경계를
+    // 살짝 넘어 배치됨) 그대로 다음 루프에서 새 밴드/픽스 일정을 다시 판단한다.
+    if (cursor.getTime() < bandCutoff.getTime()) cursor = jumpTarget;
   }
 
   // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.
