@@ -6,6 +6,10 @@ import { formatDate, formatDateTime, formatTime, meetingStatusLabels, participan
 import { SectionHeading, StatusChip } from '@/components/ui';
 import { InviteLink } from '@/components/invite-link';
 import { CourseGenerationButton, GeneratingWatcher } from '@/components/course-generation-button';
+import { MeetingHostActions } from '@/components/meeting-host-actions';
+import { CourseSummaryShare } from '@/components/course-summary-share';
+import { getSharedCourseSummary } from '@/server/course-share-service';
+import { env } from '@/lib/env';
 
 interface PageProps {
   params: Promise<{ meetingId: string }>;
@@ -24,6 +28,9 @@ export default async function MeetingDetailPage({ params }: PageProps) {
   const submitted = meeting.participants.filter((p) => p.status === 'INTERVIEW_COMPLETED').length;
   const total = meeting.participants.filter((p) => p.status !== 'DECLINED').length;
   const needsMyResponse = myParticipant?.status !== 'INTERVIEW_COMPLETED';
+  const confirmedCourse = meeting.currentCourse?.status === 'CONFIRMED'
+    ? await getSharedCourseSummary(meeting.currentCourse.courseId)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -39,7 +46,16 @@ export default async function MeetingDetailPage({ params }: PageProps) {
           {formatDate(meeting.scheduledStartAt)} · {formatTime(meeting.scheduledStartAt)}–
           {formatTime(meeting.scheduledEndAt)} · {meeting.area.name}
         </p>
+        <MeetingHostActions isHost={meeting.isHost} meeting={{ id: meeting.id, title: meeting.title, capacity: meeting.capacity, specialNotes: meeting.specialNotes }} />
       </header>
+
+      {meeting.recordAccess.available && meeting.status !== 'CANCELLED' && (
+        <div className="card border-accent-100 bg-gradient-to-r from-accent-50 to-white p-5">
+          <p className="font-semibold">함께 남긴 약속 기록</p>
+          <p className="mt-1 text-sm text-ink-500">사진과 글을 한곳에서 보고, 참여자들과 댓글을 나눠보세요.</p>
+          <Link href={`/meetings/${meeting.id}/record`} className="btn-primary mt-3">사진·글 기록 열기</Link>
+        </div>
+      )}
 
       {meeting.currentCourse && meeting.status === 'VOTING' && (
         <div className="card border-accent-100 bg-accent-50 p-5">
@@ -53,12 +69,15 @@ export default async function MeetingDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {meeting.currentCourse && meeting.status === 'CONFIRMED' && (
+      {meeting.currentCourse && confirmedCourse && meeting.status !== 'CANCELLED' && (
         <div className="card p-5">
           <p className="font-semibold">코스가 확정됐어요</p>
-          <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
-            확정된 코스 보기
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
+              확정된 코스 보기
+            </Link>
+            <CourseSummaryShare course={confirmedCourse} kakaoJsKey={env.KAKAO_JS_KEY ?? null} />
+          </div>
         </div>
       )}
 

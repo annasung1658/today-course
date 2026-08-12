@@ -6,7 +6,9 @@ import {
   buildRegenerationConstraints,
   calcItemRevoteEndsAt,
   canVoteOnItem,
+  courseSlotPolicy,
   decideRegeneration,
+  filterByProximity,
   isStaleVote,
   itemVotingPhase,
   haveAllEligibleVoted,
@@ -291,7 +293,9 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
   if (!item || item.courseId !== courseId) throw apiError('RESOURCE_NOT_FOUND');
   await assertParticipant(item.course.meetingId, userId);
   if (item.course.status === 'CONFIRMED') throw apiError('VOTING_CLOSED');
-  if (item.status !== 'LOCKED' || item.regenerationCount < votingPolicy.maxRegenerationPerItem) {
+  // 기존 코스는 생성 당시의 최대 횟수(예: 2회)를 저장하고 있을 수 있다.
+  // 현재 전역 정책값이 아니라 이 항목에 실제 저장된 한도를 모두 썼는지 판단한다.
+  if (item.status !== 'LOCKED' || item.regenerationCount < item.maxRegenerationCount) {
     throw apiError('INVALID_MEETING_STATUS', { reason: '재생성 횟수를 모두 사용한 항목만 초기화할 수 있습니다.' });
   }
 
@@ -303,6 +307,7 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
         status: 'ACTIVE',
         regenerationCount: 0,
         maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+        generationVersion: { increment: 1 },
         revoteEndsAt: null,
       },
     });
@@ -312,6 +317,7 @@ export async function resetRegenerationAfterAd(courseId: string, itemId: string,
     courseItemId: reset.id,
     regenerationCount: reset.regenerationCount,
     maxRegenerationCount: votingPolicy.maxRegenerationPerItem,
+    generationVersion: reset.generationVersion,
     status: reset.status,
   };
 }
@@ -407,11 +413,30 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
 
     const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: course.meetingId } });
     const aggregated = await loadAggregatedPreferences(course.meetingId);
-    const places = await getPlaceProvider().search({
+    // 식사 카테고리는 참가자가 가장 많이 답한 음식 키워드로 검색한다.
+    // activityKeywords(예: "소품샵", "도자기 공방")는 카테고리 정보 없이 저장되는 값이라,
+    // 실제로 그 키워드가 어떤 카테고리를 가리키는지 알 수 없다 — ACTIVITY/SHOPPING처럼
+    // 참가자가 구체적 장소명을 직접 말하는 게 흔한 카테고리에만 한정해서 쓴다.
+    // BAR 같은 카테고리에까지 그대로 적용하면 "이자카야를 다시 뽑았는데 소품샵이 나옴"처럼
+    // 완전히 관계없는 곳이 검색된다 — 실제로 겪은 버그다.
+    const isMealCategory =
+      constraints.category === 'BREAKFAST' || constraints.category === 'LUNCH' || constraints.category === 'DINNER';
+    const isKeywordCategory = constraints.category === 'ACTIVITY' || constraints.category === 'SHOPPING';
+    const topFood = aggregated.preferredFoods[0]?.tag;
+    const topActivityKeyword = aggregated.activityKeywords[0];
+    const regenerationQuery = isMealCategory ? topFood : isKeywordCategory ? topActivityKeyword : undefined;
+    const rawPlaces = await getPlaceProvider().search({
       area: course.meeting.areaName,
       category: constraints.category,
       limit: 30,
+      query: regenerationQuery,
     });
+    // 새로 뽑을 장소는 이 코스에 이미 들어있는 다른 장소들 근처여야 한다 — 안 그러면
+    // 지역명은 같아도 실제로는 멀리 떨어진 곳이 뽑혀 이동시간 상한(45분)에 걸릴 수 있다.
+    const anchors = course.items
+      .filter((i: PrismaRow) => i.id !== oldItem.id && i.status !== 'REPLACED' && i.latitude !== null && i.longitude !== null)
+      .map((i: PrismaRow) => ({ latitude: i.latitude as number, longitude: i.longitude as number }));
+    const places = filterByProximity(rawPlaces, anchors, courseSlotPolicy.maxCandidateRadiusKm);
 
     const generated = await getAiProvider().regenerateItem({
       meetingTitle: course.meeting.title,

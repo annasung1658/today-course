@@ -1,24 +1,20 @@
 import {
-  aiPolicy,
+  courseSlotPolicy,
   filterPlaces,
-  interviewPolicy,
   koreaTimeParts,
-  validateFixedSchedulesPreserved,
-  validateItemTimeline,
+  scaledMaxCourseItems,
 } from '@oneulcourse/core';
-import type { CourseItemCategory, DraftCourseItem, PlaceCandidate } from '@oneulcourse/core';
+import type { CourseItemCategory, PlaceCandidate, TimeBand } from '@oneulcourse/core';
 import type {
   AiProvider,
   CourseGenerationInput,
   GeneratedCourse,
   GeneratedCourseItem,
-  InterviewTurnInput,
-  InterviewTurnOutput,
   ItemRegenerationInput,
   PreferenceExtractionOutput,
 } from '@/providers/types';
-import { categoryLabel } from '../mock/ai';
-import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
+import { categoryLabels } from '@/lib/format';
+import { LocalRouteProvider } from '../local/place';
 
 /**
  * Gemini 3.5 Flash-Lite 기반 실제 AI Provider.
@@ -28,14 +24,7 @@ import { MockPlaceProvider, MockRouteProvider } from '../mock/place';
  */
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
-
-/** 인터뷰 질문은 매번 LLM에 묻지 않고 고정 문구를 쓴다 — 문맥 이해(취향 추출)만 Gemini가 담당한다. */
-const QUESTIONS = [
-  '먹고싶은 음식이나 먹기 싫은 음식을 알려주세요.',
-  '하고싶은 활동이나 하기 싫은 활동이 있나요? 가고싶은 장소는 링크나 사진을 첨부해도 좋아요.',
-  '1인 기준으로 생각하는 예산은 어느 정도인가요?',
-  '특별히 고려했으면 좋을 사항이 있으면 적어주세요 (알레르기, 반려견 동반, 이동 제약 등)',
-];
+const GEMINI_REQUEST_TIMEOUT_MS = 15_000;
 
 const ACTIVITY_ENUM = ['WALK', 'EXHIBITION', 'SHOPPING', 'ACTIVITY', 'BAR', 'CAFE'];
 const ATMOSPHERE_ENUM = ['QUIET', 'CASUAL', 'TRENDY', 'SPECIAL'];
@@ -58,6 +47,7 @@ async function callGemini<T>(params: {
       contents: [{ role: 'user', parts: [{ text: params.prompt }] }],
       generationConfig: { responseMimeType: 'application/json', responseSchema: params.responseSchema },
     }),
+    signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Gemini API 오류 (${res.status}): ${await res.text()}`);
@@ -72,8 +62,7 @@ async function callGemini<T>(params: {
 
 export class GeminiAiProvider implements AiProvider {
   readonly name = 'gemini';
-  private places = new MockPlaceProvider();
-  private routes = new MockRouteProvider();
+  private routes = new LocalRouteProvider();
 
   constructor(
     private readonly apiKey: string,
@@ -82,18 +71,6 @@ export class GeminiAiProvider implements AiProvider {
 
   private call<T>(systemInstruction: string, prompt: string, responseSchema: object): Promise<T> {
     return callGemini<T>({ apiKey: this.apiKey, model: this.model, systemInstruction, prompt, responseSchema });
-  }
-
-  async askNextQuestion(input: InterviewTurnInput): Promise<InterviewTurnOutput> {
-    const maxQuestions = Math.min(input.targetQuestionCount, interviewPolicy.maxTurns);
-    if (input.questionIndex >= maxQuestions) return { nextQuestion: null, isComplete: true };
-    if (input.userAnswer.trim().length < 2 && input.questionIndex > 0) {
-      return { nextQuestion: '조금만 더 자세히 알려주실 수 있을까요?', isComplete: false };
-    }
-    return {
-      nextQuestion: QUESTIONS[input.questionIndex] ?? null,
-      isComplete: input.questionIndex >= QUESTIONS.length,
-    };
   }
 
   async extractPreferences(
@@ -146,21 +123,9 @@ export class GeminiAiProvider implements AiProvider {
   }
 
   async generateCourse(input: CourseGenerationInput): Promise<GeneratedCourse> {
-    for (let attempt = 0; attempt < aiPolicy.maxValidationRetries; attempt += 1) {
-      const course = await this.tryGenerateCourse(input);
-      const draftItems: DraftCourseItem[] = course.items.map((item) => ({
-        sequence: item.sequence,
-        category: item.category,
-        startAt: item.startAt,
-        endAt: item.endAt,
-        placeId: item.placeId,
-        fixedScheduleId: item.fixedScheduleId,
-      }));
-      const fixedCheck = validateFixedSchedulesPreserved(draftItems, input.fixedSchedules);
-      const timelineCheck = validateItemTimeline(draftItems);
-      if (fixedCheck.valid && timelineCheck.valid) return course;
-    }
-    throw new Error('Gemini가 생성한 코스가 검증을 통과하지 못했습니다.');
+    // 검증과 재시도는 course-service 한 곳에서만 담당한다.
+    // 여기서 다시 반복하면 최대 N²번 Gemini를 호출해 서버리스 제한 시간을 초과한다.
+    return this.tryGenerateCourse(input);
   }
 
   /**
@@ -198,6 +163,12 @@ export class GeminiAiProvider implements AiProvider {
         },
       );
       if (accepted.length > 0) flexibleSlots.push({ index, slot, accepted });
+      else {
+        console.error('[course-generation] slot has zero candidates', {
+          category: slot.category,
+          totalAvailableForCategory: input.availablePlaces.filter((p) => p.category === slot.category).length,
+        });
+      }
       roughCursor = endAt;
     });
 
@@ -210,20 +181,35 @@ export class GeminiAiProvider implements AiProvider {
     for (let index = 0; index < plan.length; index += 1) {
       const fixed = resolvedFixed.get(index);
       if (fixed) {
+        const prevFixed = items[items.length - 1];
+        const fixedTravel =
+          prevFixed &&
+          prevFixed.latitude !== null &&
+          prevFixed.longitude !== null &&
+          fixed.fixed.latitude !== null &&
+          fixed.fixed.longitude !== null
+            ? await this.routes.estimateMinutes(
+                { latitude: prevFixed.latitude, longitude: prevFixed.longitude },
+                { latitude: fixed.fixed.latitude, longitude: fixed.fixed.longitude },
+              )
+            : items.length === 0
+              ? 0
+              : 10;
+
         items.push({
           sequence: items.length + 1,
-          category: 'ACTIVITY',
+          category: fixed.fixed.category,
           title: fixed.fixed.title,
-          placeId: null,
+          placeId: fixed.fixed.placeId,
           placeName: fixed.fixed.placeName,
-          address: null,
-          latitude: null,
-          longitude: null,
+          address: fixed.fixed.address,
+          latitude: fixed.fixed.latitude,
+          longitude: fixed.fixed.longitude,
           startAt: fixed.fixed.startAt,
           endAt: fixed.fixed.endAt,
           estimatedPricePerPerson: 0,
           reason: '방장이 미리 정한 일정이라 그대로 넣었어요.',
-          travelMinutesFromPrev: items.length === 0 ? 0 : 10,
+          travelMinutesFromPrev: fixedTravel,
           fixedScheduleId: fixed.fixed.id,
         });
         cursor = new Date(fixed.fixed.endAt);
@@ -245,11 +231,14 @@ export class GeminiAiProvider implements AiProvider {
             )
           : 0;
 
-      const startAt = new Date(cursor.getTime() + travel * 60_000);
+      // 이전 항목 이동시간만으로 이어붙이면 밴드 경계를 무시하고 앞당겨질 수 있다
+      // (예: 카페 다음 슬롯이 "저녁식사"인데 오후 3시에 붙어버림) — 이 슬롯이 속한
+      // 밴드 시작 시각보다 이르게는 잡지 않는다.
+      const startAt = new Date(Math.max(cursor.getTime() + travel * 60_000, entry.slot.targetStartAt.getTime()));
       items.push({
         sequence: items.length + 1,
         category: entry.slot.category,
-        title: `${categoryLabel(entry.slot.category)} - ${place.name}`,
+        title: `${categoryLabels[entry.slot.category]} - ${place.name}`,
         placeId: place.placeId,
         placeName: place.name,
         address: place.address,
@@ -285,22 +274,27 @@ export class GeminiAiProvider implements AiProvider {
         const candidateList = accepted
           .map((p) => `  - placeId: ${p.placeId}, 이름: ${p.name}, 1인 가격: ${p.averagePricePerPerson}원, 애견동반: ${p.petFriendly ? 'O' : 'X'}`)
           .join('\n');
-        return `[슬롯 ${index}] 카테고리: ${categoryLabel(slot.category)}\n후보:\n${candidateList}`;
+        return `[슬롯 ${index}] 카테고리: ${categoryLabels[slot.category]}\n후보:\n${candidateList}`;
       })
       .join('\n\n');
 
     return this.call<{ picks: Array<{ slotIndex: number; placeId: string; reason: string }>; title: string; summary: string }>(
       '너는 모임 코스 하루 전체를 한 번에 설계하는 플래너야. ' +
+        '전달 받은 일정 시작시간과 끝나는 시간을 꼭 준수해야해. '+
+        '전달 받은 위치를 꼭 준수해야해. ' +
         '슬롯마다 주어진 후보 목록 중에서만 딱 하나씩 골라야 해(목록에 없는 placeId를 만들면 안 돼). ' +
         '슬롯 순서와 카테고리는 이미 정해져 있으니 바꾸지 마. ' +
         '하루 전체 흐름을 보고 골라 — 예를 들어 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
         '비선호 음식과 겹치는 후보는 이름에서 확실히 드러나는 경우 피해줘. ' +
+        '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 ' +
+        '포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘. ' +
         '마지막으로 이 코스 전체에 어울리는 제목과 1문장 소개도 한국어로 지어줘.',
       `지역: ${input.meeting.areaName}\n` +
         `분위기 태그: ${input.meeting.atmosphereTags.join(', ') || '없음'}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
         `비선호 음식: ${aggregated.dislikedFoods.join(', ') || '없음'}\n` +
         `선호 분위기: ${aggregated.preferredAtmospheres.map((a) => a.tag).join(', ') || '없음'}\n` +
+        `참가자가 구체적으로 말한 장소/키워드: ${aggregated.activityKeywords.join(', ') || '없음'}\n` +
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n\n` +
         `${slotsText}`,
       {
@@ -327,8 +321,7 @@ export class GeminiAiProvider implements AiProvider {
   }
 
   async regenerateItem(input: ItemRegenerationInput): Promise<GeneratedCourseItem> {
-    const candidates = await this.places.search({ area: input.areaName, category: input.target.category, limit: 30 });
-    const pool = [...candidates, ...input.availablePlaces].filter((p) => p.category === input.target.category);
+    const pool = input.availablePlaces.filter((p) => p.category === input.target.category);
     const { accepted } = filterPlaces(pool, {
       aggregated: input.aggregated,
       rejectedPlaceIds: input.rejectedPlaceIds,
@@ -347,7 +340,7 @@ export class GeminiAiProvider implements AiProvider {
     return {
       sequence: input.target.sequence,
       category: input.target.category,
-      title: `${categoryLabel(input.target.category)} - ${picked.place.name}`,
+      title: `${categoryLabels[input.target.category]} - ${picked.place.name}`,
       placeId: picked.place.placeId,
       placeName: picked.place.name,
       address: picked.place.address,
@@ -380,11 +373,13 @@ export class GeminiAiProvider implements AiProvider {
       '너는 모임 코스에 들어갈 장소 하나를 후보 목록 중에서 고르는 어드바이저야. ' +
         '반드시 후보 목록에 있는 placeId 중 하나만 골라야 해. 목록에 없는 placeId를 만들어내면 안 돼. ' +
         '비선호 음식은 장소 이름에서 유추할 수 있는 만큼만 판단해서, 확실히 겹치는 후보는 되도록 피해줘 ' +
-        '(예: 비선호 음식이 "곱창"이면 이름에 곱창이 들어간 후보는 피하고, 애매하면 무리해서 배제하지 않아도 돼).',
+        '(예: 비선호 음식이 "곱창"이면 이름에 곱창이 들어간 후보는 피하고, 애매하면 무리해서 배제하지 않아도 돼). ' +
+        '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘.',
       `지역: ${areaName}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
         `비선호 음식: ${aggregated.dislikedFoods.join(', ') || '없음'}\n` +
         `선호 분위기: ${aggregated.preferredAtmospheres.map((a) => a.tag).join(', ') || '없음'}\n` +
+        `참가자가 구체적으로 말한 장소/키워드: ${aggregated.activityKeywords.join(', ') || '없음'}\n` +
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n` +
         (neighbours
           ? `이전 장소: ${neighbours.previousPlaceName ?? '없음'}, 다음 장소: ${neighbours.nextPlaceName ?? '없음'}\n`
@@ -406,46 +401,125 @@ export class GeminiAiProvider implements AiProvider {
 // ── 내부 헬퍼 (mock/ai.ts의 planCategories와 동일한 규칙) ─────────────
 
 type Slot =
-  | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number }
+  | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number; targetStartAt: Date }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
 
+/**
+ * hour(0~23)가 속한 시간대 밴드를 찾는다. 자정 넘은 시각(0~6시)은 전날 밤 밴드의 연장으로 본다.
+ * 어느 밴드에도 안 걸리면(예: 23시~다음날 7시) null을 돌려준다 — 그 시간대는 안전하게
+ * 검증된 영업시간 데이터가 없어 새 장소를 추천할 수 없다는 뜻이라, 억지로 아무 밴드에나
+ * 끼워 맞추면 안 된다.
+ */
+function findTimeBand(hour: number): TimeBand | null {
+  const normalized = hour < 7 ? hour + 24 : hour;
+  return courseSlotPolicy.timeBands.find((b) => normalized >= b.startHour && normalized < b.endHour) ?? null;
+}
+
+/**
+ * 약속 시작~종료 시각을 시간대 밴드를 따라 훑으면서 슬롯을 짠다.
+ * 밴드 폭이 카테고리 체류시간보다 넓으면, 그 밴드 안에서 겹치지 않는 다른 카테고리로
+ * 남는 시간을 계속 채운다 — 그렇지 않으면 "전시 1시간만 하고 저녁까지 2시간 붕 뜸"처럼
+ * 일정에 설명되지 않는 빈 구간이 생긴다. 밴드의 카테고리를 다 썼거나(같은 밴드에서
+ * 카테고리를 반복하지는 않는다) 남은 시간이 부족해지면 밴드 끝 시각으로 커서를 점프해
+ * 다음 밴드로 넘어간다.
+ *
+ * 픽스 일정은 시작 시각에 도달하는 즉시 그 자리에 끼워 넣고, 일반 슬롯은 픽스 일정의
+ * 시작 시각을 절대 넘기지 않는다 — 그렇지 않으면 일반 슬롯이 픽스 일정 시간대를 모른 채
+ * 배치돼 두 항목의 시간이 겹치는 채로 저장되고, 겹침 검증(validateItemTimeline)에서
+ * 매번 재시도만 반복하다 결국 생성이 실패한다(실제로 겪은 버그).
+ */
 function planCategories(input: CourseGenerationInput): Slot[] {
-  const startHour = koreaTimeParts(input.meeting.scheduledStartAt).hour;
-  const activityTags = input.aggregated.preferredActivities.map((a) => a.tag);
+  const activityTally = new Map(input.aggregated.preferredActivities.map((a) => [a.tag, a.count]));
+  const fixedSorted = [...input.fixedSchedules].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  // 밴드가 픽스 일정에 끊겨도(중간에 다른 걸 끼우고 이어져도) 같은 밴드로 취급해
+  // 카테고리를 반복하지 않는다. 밴드 시작 시각(startHour)으로 구분한다.
+  const usedByBand = new Map<number, Set<CourseItemCategory>>();
 
   const base: Slot[] = [];
-  if (startHour < 15) {
-    base.push({ kind: 'PLACE', category: 'LUNCH', durationMinutes: 80 });
-    base.push({ kind: 'PLACE', category: 'CAFE', durationMinutes: 60 });
-  } else {
-    base.push({ kind: 'PLACE', category: 'CAFE', durationMinutes: 60 });
-    base.push({ kind: 'PLACE', category: 'DINNER', durationMinutes: 90 });
+  let cursor = new Date(input.meeting.scheduledStartAt);
+  const end = input.meeting.scheduledEndAt;
+  const maxItems = scaledMaxCourseItems((end.getTime() - cursor.getTime()) / 60_000);
+  let placeCount = 0;
+  let fixedIndex = 0;
+
+  while (cursor.getTime() < end.getTime()) {
+    const nextFixed = fixedSorted[fixedIndex];
+
+    if (nextFixed && cursor.getTime() >= nextFixed.startAt.getTime()) {
+      base.push({ kind: 'FIXED', fixed: nextFixed });
+      cursor = new Date(nextFixed.endAt);
+      fixedIndex += 1;
+      continue;
+    }
+
+    if (placeCount >= maxItems) {
+      // 더 넣을 수 있는 일반 슬롯은 없지만, 남은 픽스 일정은 반드시 넣어야 하니
+      // 다음 픽스 일정 시작 시각(없으면 종료 시각)까지 커서만 점프시킨다.
+      cursor = nextFixed ? new Date(nextFixed.startAt) : new Date(end);
+      continue;
+    }
+
+    const { hour, minute } = koreaTimeParts(cursor);
+    const band = findTimeBand(hour);
+    if (!band) {
+      // 안전하게 검증된 영업시간 밖(예: 23시~다음날 7시)이라 새로 추천할 수 있는 시간대가
+      // 아니다 — 다음 픽스 일정(호스트가 직접 지정한 거라 안전조건과 무관)이나 모임
+      // 종료까지 그대로 넘어간다.
+      cursor = nextFixed ? new Date(nextFixed.startAt) : new Date(end);
+      continue;
+    }
+    const normalizedHour = hour < 7 ? hour + 24 : hour;
+    const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
+    // 다음 경계(밴드 끝/모임 종료/다음 픽스 일정 시작 중 가장 이른 시각) — 커서는 결국 여기까지 진행한다.
+    const boundaryTimes = [bandEndAt.getTime(), end.getTime()];
+    if (nextFixed) boundaryTimes.push(nextFixed.startAt.getTime());
+    const boundary = new Date(Math.min(...boundaryTimes));
+    // 다음 경계가 픽스 일정 시작이면, 실제 이동시간이 붙을 걸 감안해 그 직전에 여유를 남기고
+    // 그 여유 구간 안으로는 새 슬롯을 안 채운다 — 안 그러면 이동시간 때문에 슬롯이 픽스
+    // 일정 위로 밀려서 겹침 검증에 항상 실패한다(실제로 겪은 버그).
+    const fillLimit =
+      nextFixed && boundary.getTime() === nextFixed.startAt.getTime()
+        ? new Date(boundary.getTime() - courseSlotPolicy.preFixedBufferMinutes * 60_000)
+        : boundary;
+
+    const usedInBand = usedByBand.get(band.startHour) ?? new Set<CourseItemCategory>();
+    usedByBand.set(band.startHour, usedInBand);
+
+    while (cursor.getTime() < fillLimit.getTime() && placeCount < maxItems) {
+      const remaining = band.categories.filter((c) => !usedInBand.has(c));
+      if (remaining.length === 0) break;
+
+      // 밴드에 카테고리가 여럿이면 참가자 선호도가 가장 높은 걸 고르고, 아무도 안 원했으면(전부 0)
+      // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
+      const chosen = remaining.sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0))[0]!;
+      const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
+      const slotEnd = new Date(cursor.getTime() + durationMinutes * 60_000);
+      // 이 슬롯을 넣으면 이동시간 여유까지 포함한 한계를 넘겨버리면 여기서 멈춘다.
+      if (slotEnd.getTime() > fillLimit.getTime()) break;
+
+      base.push({
+        kind: 'PLACE',
+        category: chosen,
+        durationMinutes,
+        // 이 슬롯이 속한 밴드에 들어선 시각 — 실제 시각 배정 때 여기보다 앞당겨지지 않게 한다.
+        targetStartAt: new Date(cursor),
+      });
+      usedInBand.add(chosen);
+      placeCount += 1;
+      cursor = slotEnd;
+    }
+
+    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, 이동시간 여유 확보 등) 다음
+    // 경계(밴드 끝 또는 다음 픽스 일정 시작 중 이른 쪽)로 커서를 점프한다. 여유 구간이
+    // 남아있어도 boundary까지 그대로 진행해야 다음 루프에서 픽스 일정이 바로 끼워진다.
+    if (cursor.getTime() < boundary.getTime()) cursor = boundary;
   }
 
-  let extraAdded = false;
-  if (activityTags.includes('EXHIBITION')) {
-    base.push({ kind: 'PLACE', category: 'EXHIBITION', durationMinutes: 60 });
-    extraAdded = true;
+  // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.
+  while (fixedIndex < fixedSorted.length) {
+    base.push({ kind: 'FIXED', fixed: fixedSorted[fixedIndex]! });
+    fixedIndex += 1;
   }
-  if (activityTags.includes('SHOPPING')) {
-    base.push({ kind: 'PLACE', category: 'SHOPPING', durationMinutes: 50 });
-    extraAdded = true;
-  }
-  if (activityTags.includes('BAR')) {
-    base.push({ kind: 'PLACE', category: 'BAR', durationMinutes: 90 });
-    extraAdded = true;
-  }
-  if (activityTags.includes('ACTIVITY')) {
-    base.push({ kind: 'PLACE', category: 'ACTIVITY', durationMinutes: 60 });
-    extraAdded = true;
-  }
-  // 위 태그 중 아무것도 안 걸렸으면(예: CAFE만 선호) 최소 코스 개수(aiPolicy.minCourseItems)를
-  // 못 채우니 산책을 기본값으로 넣는다.
-  if (activityTags.includes('WALK') || !extraAdded) base.push({ kind: 'PLACE', category: 'WALK', durationMinutes: 50 });
 
-  const fixedSlots: Slot[] = input.fixedSchedules.map((fixed) => ({ kind: 'FIXED', fixed }));
-  return [...base, ...fixedSlots].sort((a, b) => {
-    if (a.kind === 'FIXED' && b.kind === 'FIXED') return a.fixed.startAt.getTime() - b.fixed.startAt.getTime();
-    return 0;
-  });
+  return base;
 }

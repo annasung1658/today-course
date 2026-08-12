@@ -7,6 +7,7 @@ import { meetingPolicy } from '@oneulcourse/core';
  */
 
 export const courseItemCategorySchema = z.enum([
+  'BREAKFAST',
   'CAFE',
   'LUNCH',
   'DINNER',
@@ -34,7 +35,7 @@ export const generatedCourseItemSchema = z.object({
   endAt: isoDate,
   estimatedPricePerPerson: z.number().int().min(0).max(1_000_000),
   reason: z.string().min(1).max(500),
-  travelMinutesFromPrev: z.number().int().min(0).max(240),
+  travelMinutesFromPrev: z.number().int().min(0).max(45),
   fixedScheduleId: z.string().nullable(),
 });
 
@@ -78,6 +79,11 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const guestbookEntrySchema = z.object({
+  content: z.string().trim().min(1, '방명록 내용을 입력해 주세요.').max(300, '방명록은 300자까지 남길 수 있어요.'),
+  anonymous: z.boolean().default(false),
+});
+
 // ── 사용자 ──────────────────────────────────────────────────────────
 
 export const updateMeSchema = z.object({
@@ -116,6 +122,7 @@ const fixedScheduleInputSchema = z.object({
   placeId: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  category: courseItemCategorySchema.default('ACTIVITY'),
 });
 
 export const createMeetingSchema = z
@@ -196,10 +203,6 @@ export const startInterviewSchema = z.object({
   loadDefaultPreferences: z.boolean().default(false),
 });
 
-export const interviewMessageSchema = z.object({
-  content: z.string().min(1, '답변을 입력해 주세요.').max(1000),
-});
-
 /** 설문 형식 인터뷰. 전부 무응답을 허용한다. */
 export const surveyAnswersSchema = z.object({
   foodWant: z.string().max(500).optional(),
@@ -258,6 +261,6 @@ export const feedbackDraftSchema = z.object({
 });
 
 export const presignedUploadSchema = z.object({
-  contentType: z.string().min(1),
-  extension: z.string().min(1).max(5),
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  extension: z.enum(['jpg', 'jpeg', 'png', 'webp']),
 });

@@ -136,7 +136,34 @@ export function VotingBoard({
     setResetting(true);
     setError(null);
     try {
-      await apiFetch(`/courses/${state.courseId}/items/${adItem.courseItemId}/ad-reset`, { method: 'POST' });
+      const reset = await apiFetch<{
+        courseItemId: string;
+        regenerationCount: number;
+        maxRegenerationCount: number;
+        generationVersion: number;
+        status: string;
+      }>(`/courses/${state.courseId}/items/${adItem.courseItemId}/ad-reset`, { method: 'POST' });
+
+      // 재조회가 잠시 실패해도 광고 보상이 화면에 즉시 보이게 한다.
+      setState((current) => ({
+        ...current,
+        items: current.items.map((item) =>
+          item.courseItemId === reset.courseItemId
+            ? {
+                ...item,
+                regenerationCount: reset.regenerationCount,
+                maxRegenerationCount: reset.maxRegenerationCount,
+                generationVersion: reset.generationVersion,
+                status: reset.status,
+                myVote: null,
+                likeCount: 0,
+                dislikeCount: 0,
+                phase: 'INITIAL',
+                revoteEndsAt: null,
+              }
+            : item,
+        ),
+      }));
       setAdItem(null);
       await refresh();
     } catch (err) {
@@ -329,7 +356,7 @@ function CourseItemCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="tnum text-sm font-bold text-ink-300">{item.sequence}</span>
             <span className="text-sm font-medium text-ink-500">
-              {categoryLabels[item.category] ?? item.category}
+              {categoryLabels[item.category as keyof typeof categoryLabels] ?? item.category}
             </span>
             {item.isFixedSchedule && <StatusChip>방장이 정한 일정</StatusChip>}
             {regenerating && <StatusChip tone="accent">다시 고르는 중</StatusChip>}

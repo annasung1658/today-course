@@ -68,6 +68,7 @@ enum CourseStatus {
 }
 
 enum CourseItemCategory {
+  BREAKFAST
   CAFE
   LUNCH
   DINNER
@@ -160,8 +161,22 @@ model User {
   feedbacks            Feedback[]
   notifications        Notification[]
   sentInvitations      Invitation[]         @relation("InvitationCreator")
+  guestbookEntries     GuestbookEntry[]
 
   @@index([deletedAt])
+}
+
+model GuestbookEntry {
+  id          String   @id @default(cuid())
+  authorId    String
+  content     String
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([authorId])
 }
 
 model Account {
@@ -269,7 +284,7 @@ model Meeting {
 }
 
 model FixedSchedule {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   meetingId String
   title     String
   startAt   DateTime
@@ -279,9 +294,11 @@ model FixedSchedule {
   placeId   String?
   latitude  Float?
   longitude Float?
-  // AI는 이 일정을 삭제하거나 시간·장소를 바꿀 수 없다.
-  locked    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  // 호스트가 직접 고른 카테고리. AI가 임의로 정하지 않는다(예전엔 항상 ACTIVITY로 고정돼 있었음).
+  category  CourseItemCategory  @default(ACTIVITY)
+  // AI는 이 일정을 삭제하거나 시간·장소·카테고리를 바꿀 수 없다.
+  locked    Boolean             @default(true)
+  createdAt DateTime            @default(now())
 
   meeting     Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   courseItems CourseItem[]

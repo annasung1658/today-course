@@ -8,18 +8,6 @@ import type { CourseItemCategory, PlaceCandidate, AggregatedPreference } from '@
 
 // ── AI ──────────────────────────────────────────────────────────────
 
-export interface InterviewTurnInput {
-  questionIndex: number;
-  targetQuestionCount: number;
-  history: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>;
-  userAnswer: string;
-}
-
-export interface InterviewTurnOutput {
-  nextQuestion: string | null;
-  isComplete: boolean;
-}
-
 export interface PreferenceExtractionOutput {
   preferredFoods: string[];
   dislikedFoods: string[];
@@ -45,7 +33,18 @@ export interface CourseGenerationInput {
     participantCount: number;
   };
   aggregated: AggregatedPreference;
-  fixedSchedules: Array<{ id: string; title: string; startAt: Date; endAt: Date; placeName: string }>;
+  fixedSchedules: Array<{
+    id: string;
+    title: string;
+    startAt: Date;
+    endAt: Date;
+    placeName: string;
+    address: string | null;
+    placeId: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    category: CourseItemCategory;
+  }>;
   availablePlaces: PlaceCandidate[];
   rejectedPlaceIds: string[];
 }
@@ -91,7 +90,6 @@ export interface ItemRegenerationInput {
 
 export interface AiProvider {
   readonly name: string;
-  askNextQuestion(input: InterviewTurnInput): Promise<InterviewTurnOutput>;
   extractPreferences(history: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>): Promise<PreferenceExtractionOutput>;
   generateCourse(input: CourseGenerationInput): Promise<GeneratedCourse>;
   regenerateItem(input: ItemRegenerationInput): Promise<GeneratedCourseItem>;

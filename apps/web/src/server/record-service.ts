@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { apiError } from '@/lib/api/errors';
 import { notify } from '@/server/notification-service';
 import type { PrismaRow } from '@/server/prisma-types';
+import { meetingRecordWindow } from '@/lib/meeting-lifecycle';
+import { getStorageProvider } from '@/providers';
 
 /** 약속 후 기록. 작성자와 방장 권한을 구분한다. */
 
@@ -13,15 +15,31 @@ async function assertParticipant(meetingId: string, userId: string) {
   return participant;
 }
 
-export async function getOrCreateRecord(meetingId: string, userId: string) {
+async function assertRecordAccess(meetingId: string, userId: string, requireWrite = false) {
   await assertParticipant(meetingId, userId);
+  const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { scheduledStartAt: true } });
+  if (!meeting) throw apiError('MEETING_NOT_FOUND');
+  const window = meetingRecordWindow(meeting.scheduledStartAt);
+  if (!window.available) throw apiError('INVALID_MEETING_STATUS', { reason: '약속 당일부터 기록을 열 수 있어요.' });
+  if (requireWrite && !window.writable) {
+    throw apiError('INVALID_MEETING_STATUS', { reason: '기록 작성 기간이 끝났어요. 기존 기록은 계속 볼 수 있어요.' });
+  }
+  return window;
+}
+
+export async function getOrCreateRecord(meetingId: string, userId: string) {
+  await assertRecordAccess(meetingId, userId);
   const existing = await prisma.meetingRecord.findUnique({ where: { meetingId } });
   if (existing) return existing;
   return prisma.meetingRecord.create({ data: { meetingId } });
 }
 
 export async function getRecordDetail(meetingId: string, userId: string) {
-  await assertParticipant(meetingId, userId);
+  const access = await assertRecordAccess(meetingId, userId);
+
+  const meeting = await prisma.meeting.findUniqueOrThrow({
+    where: { id: meetingId }, select: { title: true, scheduledStartAt: true, hostUserId: true },
+  });
 
   const record = await prisma.meetingRecord.findUnique({
     where: { meetingId },
@@ -49,6 +67,10 @@ export async function getRecordDetail(meetingId: string, userId: string) {
 
   return {
     meetingId,
+    title: meeting.title,
+    scheduledStartAt: meeting.scheduledStartAt.toISOString(),
+    writable: access.writable,
+    closesAt: access.closesAt.toISOString(),
     recordId: record?.id ?? null,
     courseItems: (course?.items ?? []).map((item: PrismaRow) => ({
       id: item.id,
@@ -57,12 +79,15 @@ export async function getRecordDetail(meetingId: string, userId: string) {
       placeName: item.placeName,
       photos: (record?.photos ?? [])
         .filter((p: PrismaRow) => p.courseItemId === item.id)
-        .map((p: PrismaRow) => ({ id: p.id, fileUrl: p.fileUrl, caption: p.caption, author: p.author })),
+        .map((p: PrismaRow) => ({ id: p.id, fileUrl: p.fileUrl, caption: p.caption, author: p.author, createdAt: p.createdAt.toISOString() })),
       posts: (record?.posts ?? [])
         .filter((p: PrismaRow) => p.courseItemId === item.id)
         .map(serializePost),
     })),
     generalPosts: (record?.posts ?? []).filter((p: PrismaRow) => p.courseItemId === null).map(serializePost),
+    photos: (record?.photos ?? []).map((p: PrismaRow) => ({
+      id: p.id, fileUrl: p.fileUrl, caption: p.caption, author: p.author, createdAt: p.createdAt.toISOString(),
+    })),
   };
 }
 
@@ -85,7 +110,7 @@ export async function addPhoto(
   input: { courseItemId: string | null; fileUrl: string; storageKey?: string; caption: string | null },
 ) {
   const record = await prisma.meetingRecord.findUniqueOrThrow({ where: { id: recordId } });
-  await assertParticipant(record.meetingId, userId);
+  await assertRecordAccess(record.meetingId, userId, true);
   return prisma.recordPhoto.create({
     data: {
       recordId,
@@ -98,13 +123,50 @@ export async function addPhoto(
   });
 }
 
+/** 사진 순서는 기록방 참여자라면 편집할 수 있다. createdAt을 정렬 키로 재사용해 별도 마이그레이션 없이 유지한다. */
+export async function reorderPhotos(recordId: string, userId: string, photoIds: string[]) {
+  const record = await prisma.meetingRecord.findUnique({
+    where: { id: recordId },
+    include: { photos: { select: { id: true } } },
+  });
+  if (!record) throw apiError('RESOURCE_NOT_FOUND');
+  await assertRecordAccess(record.meetingId, userId, true);
+
+  const existingIds = record.photos.map((photo) => photo.id);
+  if (photoIds.length !== existingIds.length || new Set(photoIds).size !== photoIds.length || photoIds.some((id) => !existingIds.includes(id))) {
+    throw apiError('VALIDATION_ERROR', { photoIds: '현재 사진 전체를 올바른 순서로 보내주세요.' });
+  }
+
+  const base = new Date();
+  await prisma.$transaction(photoIds.map((id, index) => prisma.recordPhoto.update({
+    where: { id },
+    data: { createdAt: new Date(base.getTime() + index * 1000) },
+  })));
+  return { photoIds };
+}
+
+/** 사진은 올린 사람 또는 방장이 삭제할 수 있으며 저장소 원본도 함께 정리한다. */
+export async function removePhoto(photoId: string, userId: string) {
+  const photo = await prisma.recordPhoto.findUnique({
+    where: { id: photoId },
+    include: { record: { include: { meeting: { select: { hostUserId: true } } } } },
+  });
+  if (!photo) throw apiError('RESOURCE_NOT_FOUND');
+  await assertRecordAccess(photo.record.meetingId, userId, true);
+  if (photo.authorUserId !== userId && photo.record.meeting.hostUserId !== userId) throw apiError('FORBIDDEN');
+
+  await prisma.recordPhoto.delete({ where: { id: photoId } });
+  if (photo.storageKey) await getStorageProvider().remove(photo.storageKey).catch(() => undefined);
+  return { id: photoId, deleted: true };
+}
+
 export async function addPost(
   recordId: string,
   userId: string,
   input: { courseItemId: string | null; content: string },
 ) {
   const record = await prisma.meetingRecord.findUniqueOrThrow({ where: { id: recordId } });
-  await assertParticipant(record.meetingId, userId);
+  await assertRecordAccess(record.meetingId, userId, true);
   return prisma.recordPost.create({
     data: { recordId, courseItemId: input.courseItemId, authorUserId: userId, content: input.content },
   });
@@ -138,7 +200,7 @@ export async function addComment(postId: string, userId: string, content: string
     include: { record: true },
   });
   if (!post) throw apiError('RESOURCE_NOT_FOUND');
-  await assertParticipant(post.record.meetingId, userId);
+  await assertRecordAccess(post.record.meetingId, userId, true);
 
   const comment = await prisma.recordComment.create({
     data: { postId, authorUserId: userId, content },

@@ -6,11 +6,16 @@ import { notify } from '@/server/notification-service';
 import type { z } from 'zod';
 import type { createMeetingSchema } from '@/server/schemas';
 import type { PrismaRow, PrismaTx } from '@/server/prisma-types';
+import { canScheduleMeeting, meetingRecordWindow } from '@/lib/meeting-lifecycle';
+import { finalizeCourse } from '@/server/course-service';
 
 /** 약속 생성·조회·초대. */
 
 export async function createMeeting(userId: string, input: z.infer<typeof createMeetingSchema>) {
   const now = new Date();
+  if (!canScheduleMeeting(input.scheduledStartAt, now)) {
+    throw apiError('VALIDATION_ERROR', { scheduledStartAt: '오늘 이전 날짜로는 약속을 만들 수 없습니다.' });
+  }
   const responseDeadlineAt = input.responseDeadlineAt ?? defaultResponseDeadline(now);
 
   const meeting = await prisma.$transaction(async (tx: PrismaTx) => {
@@ -42,6 +47,7 @@ export async function createMeeting(userId: string, input: z.infer<typeof create
             placeId: f.placeId,
             latitude: f.latitude,
             longitude: f.longitude,
+            category: f.category,
             locked: true,
           })),
         },
@@ -90,6 +96,7 @@ export interface MeetingDetail {
     endAt: string;
     placeName: string;
     address: string | null;
+    category: string;
     locked: boolean;
   }>;
   participants: Array<{
@@ -103,6 +110,21 @@ export interface MeetingDetail {
   }>;
   currentCourse: { courseId: string; status: string; votingEndsAt: string } | null;
   serverTime: string;
+  recordAccess: { available: boolean; writable: boolean; opensAt: string; closesAt: string };
+}
+
+async function finalizeExpiredCourseOnRead(meeting: PrismaRow) {
+  const course = meeting.courses?.[0];
+  if (meeting.status !== 'VOTING' || !course || course.status !== 'VOTING' || course.votingEndsAt.getTime() > Date.now()) return;
+  try {
+    const result = await finalizeCourse(course.id);
+    if (('confirmed' in result && result.confirmed) || ('alreadyConfirmed' in result && result.alreadyConfirmed)) {
+      meeting.status = 'CONFIRMED';
+      course.status = 'CONFIRMED';
+    }
+  } catch {
+    // 크론이 다시 처리할 수 있도록 조회 자체는 실패시키지 않는다.
+  }
 }
 
 export async function getMeetingDetail(meetingId: string, userId: string): Promise<MeetingDetail> {
@@ -120,8 +142,13 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
   });
   if (!meeting) throw apiError('MEETING_NOT_FOUND');
 
+  await finalizeExpiredCourseOnRead(meeting);
+
   const me = meeting.participants.find((p: PrismaRow) => p.userId === userId);
   if (!me) throw apiError('FORBIDDEN');
+
+  const recordWindow = meetingRecordWindow(meeting.scheduledStartAt);
+  const effectiveStatus = meeting.status !== 'CANCELLED' && recordWindow.isPast ? 'COMPLETED' : meeting.status;
 
   return {
     id: meeting.id,
@@ -141,7 +168,7 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
     atmosphereDescription: meeting.atmosphereDescription,
     specialNotes: meeting.specialNotes,
     responseDeadlineAt: meeting.responseDeadlineAt.toISOString(),
-    status: meeting.status,
+    status: effectiveStatus,
     isHost: meeting.hostUserId === userId,
     host: meeting.host,
     fixedSchedules: meeting.fixedSchedules.map((f: PrismaRow) => ({
@@ -151,6 +178,7 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
       endAt: f.endAt.toISOString(),
       placeName: f.placeName,
       address: f.address,
+      category: f.category,
       locked: f.locked,
     })),
     // 다른 참여자에게는 제출 여부만 보인다. 인터뷰 원문은 절대 포함하지 않는다.
@@ -171,6 +199,12 @@ export async function getMeetingDetail(meetingId: string, userId: string): Promi
         }
       : null,
     serverTime: new Date().toISOString(),
+    recordAccess: {
+      available: recordWindow.available,
+      writable: recordWindow.writable,
+      opensAt: recordWindow.opensAt.toISOString(),
+      closesAt: recordWindow.closesAt.toISOString(),
+    },
   };
 }
 
@@ -201,12 +235,14 @@ export async function listMyMeetings(userId: string, status?: string): Promise<M
     orderBy: { scheduledStartAt: 'asc' },
   });
 
+  await Promise.all(meetings.map((meeting: PrismaRow) => finalizeExpiredCourseOnRead(meeting)));
+
   return meetings.map((m: PrismaRow) => ({
     id: m.id,
     title: m.title,
     scheduledStartAt: m.scheduledStartAt.toISOString(),
     areaName: m.areaName,
-    status: m.status,
+    status: m.status !== 'CANCELLED' && meetingRecordWindow(m.scheduledStartAt).isPast ? 'COMPLETED' : m.status,
     isHost: m.hostUserId === userId,
     participantCount: m.participants.filter((p: PrismaRow) => p.status !== 'DECLINED').length,
     capacity: m.capacity,
