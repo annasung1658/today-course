@@ -284,7 +284,11 @@ export class GeminiAiProvider implements AiProvider {
         '전달 받은 위치를 꼭 준수해야해. ' +
         '슬롯마다 주어진 후보 목록 중에서만 딱 하나씩 골라야 해(목록에 없는 placeId를 만들면 안 돼). ' +
         '슬롯 순서와 카테고리는 이미 정해져 있으니 바꾸지 마. ' +
-        '하루 전체 흐름을 보고 골라 — 예를 들어 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
+        '점심과 저녁 슬롯이 둘 다 있으면 반드시 서로 다른 음식 종류로 골라야 해 — ' +
+        '후보 이름에서 파악되는 음식 종류(한식/중식/일식/양식/고기/국물요리/분식 등) 기준으로 ' +
+        '점심에 고른 종류를 저녁에 또 고르면 안 돼(예: 점심이 국밥이면 저녁은 국밥·해장국 같은 ' +
+        '국물요리를 피해줘). ' +
+        '그 외에도 하루 전체 흐름을 보고 골라 — 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
         '비선호 음식과 겹치는 후보는 이름에서 확실히 드러나는 경우 피해줘. ' +
         '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 ' +
         '포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘. ' +
@@ -331,10 +335,16 @@ export class GeminiAiProvider implements AiProvider {
     });
     if (accepted.length === 0) throw new Error('SAFETY_CONSTRAINT_UNVERIFIED');
 
-    const picked = await this.pickPlace(accepted, input.aggregated, input.areaName, {
-      previousPlaceName: input.neighbours.previousPlaceName,
-      nextPlaceName: input.neighbours.nextPlaceName,
-    });
+    const picked = await this.pickPlace(
+      accepted,
+      input.aggregated,
+      input.areaName,
+      {
+        previousPlaceName: input.neighbours.previousPlaceName,
+        nextPlaceName: input.neighbours.nextPlaceName,
+      },
+      input.otherMealPlaceNames,
+    );
     if (!picked) throw new Error('SAFETY_CONSTRAINT_UNVERIFIED');
 
     return {
@@ -361,6 +371,7 @@ export class GeminiAiProvider implements AiProvider {
     aggregated: CourseGenerationInput['aggregated'],
     areaName: string,
     neighbours?: { previousPlaceName: string | null; nextPlaceName: string | null },
+    otherMealPlaceNames?: string[],
   ): Promise<{ place: PlaceCandidate; reason: string } | null> {
     if (accepted.length === 0) return null;
     if (accepted.length === 1) return { place: accepted[0]!, reason: `${areaName}에서 조건에 맞는 곳이에요.` };
@@ -374,6 +385,8 @@ export class GeminiAiProvider implements AiProvider {
         '반드시 후보 목록에 있는 placeId 중 하나만 골라야 해. 목록에 없는 placeId를 만들어내면 안 돼. ' +
         '비선호 음식은 장소 이름에서 유추할 수 있는 만큼만 판단해서, 확실히 겹치는 후보는 되도록 피해줘 ' +
         '(예: 비선호 음식이 "곱창"이면 이름에 곱창이 들어간 후보는 피하고, 애매하면 무리해서 배제하지 않아도 돼). ' +
+        '이미 정해진 다른 식사 장소가 있다면, 후보 이름에서 파악되는 음식 종류(한식/중식/일식/양식/고기/ ' +
+        '국물요리/분식 등)가 그 장소와 겹치지 않는 곳을 우선으로 골라줘 — 하루에 비슷한 음식을 두 번 먹지 않게. ' +
         '참가자가 콕 집어 말한 장소 키워드가 있으면, 후보 이름이 그 키워드와 일치하거나 포함하는 게 있는지 최우선으로 확인하고 있으면 그걸 골라줘.',
       `지역: ${areaName}\n` +
         `선호 음식(빈도순): ${aggregated.preferredFoods.map((f) => f.tag).join(', ') || '없음'}\n` +
@@ -383,6 +396,9 @@ export class GeminiAiProvider implements AiProvider {
         `예산(1인): ${aggregated.budget ? `${aggregated.budget.min}~${aggregated.budget.max}원` : '제한 없음'}\n` +
         (neighbours
           ? `이전 장소: ${neighbours.previousPlaceName ?? '없음'}, 다음 장소: ${neighbours.nextPlaceName ?? '없음'}\n`
+          : '') +
+        (otherMealPlaceNames && otherMealPlaceNames.length > 0
+          ? `이미 정해진 다른 식사 장소: ${otherMealPlaceNames.join(', ')}\n`
           : '') +
         `\n후보 목록:\n${candidateList}\n\n가장 잘 맞는 곳 하나를 고르고, 1문장으로 이유를 한국어로 설명해줘.`,
       {
