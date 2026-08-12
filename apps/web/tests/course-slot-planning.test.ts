@@ -79,4 +79,39 @@ describe('시나리오: 픽스 일정이 모임 시작보다 한참 뒤에 있�
     expect(plan.every((s) => s.kind === 'PLACE')).toBe(true);
     expect(plan.length).toBeGreaterThan(0);
   });
+
+  it('밴드 고유 카테고리가 몇 분 차이로 안 맞으면 카페·산책으로 대신 채운다', () => {
+    // 실제로 겪은 버그: 12:30 시작, 14:30 CGV(픽스) 사이 2시간이 통째로 빈 채
+    // 코스가 CGV부터 시작됐다. 11-14시 밴드는 카테고리가 LUNCH(80분) 하나뿐인데,
+    // 픽스 버퍼(45분)를 뺀 한계가 13:45라 12:30+80분=13:50으로 5분 초과해서
+    // 대체할 다른 카테고리가 없어 75분(12:30~13:45)을 통째로 포기했다.
+    const input = baseInput({
+      meeting: {
+        ...baseInput({}).meeting,
+        scheduledStartAt: new Date('2026-08-13T12:30:00+09:00'),
+      },
+      fixedSchedules: [
+        {
+          id: 'fixed-1',
+          title: '스파이더맨 영화',
+          startAt: new Date('2026-08-13T14:30:00+09:00'),
+          endAt: new Date('2026-08-13T16:30:00+09:00'),
+          placeName: 'CGV 강남',
+          address: null,
+          placeId: null,
+          latitude: null,
+          longitude: null,
+          category: 'ACTIVITY',
+        },
+      ],
+    });
+
+    const plan = planCategories(input);
+    const fixedIndex = plan.findIndex((s) => s.kind === 'FIXED');
+    expect(fixedIndex).toBeGreaterThan(-1);
+
+    const beforeFixed = plan.slice(0, fixedIndex) as Extract<Slot, { kind: 'PLACE' }>[];
+    expect(beforeFixed.length).toBeGreaterThan(0);
+    expect(beforeFixed.some((s) => s.category === 'CAFE' || s.category === 'WALK')).toBe(true);
+  });
 });

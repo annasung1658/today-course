@@ -400,6 +400,9 @@ export class GeminiAiProvider implements AiProvider {
 
 // ── 내부 헬퍼 (mock/ai.ts의 planCategories와 동일한 규칙) ─────────────
 
+/** 밴드 고유 카테고리가 시간에 안 맞을 때 남는 시간을 대신 채우는 짧고 유연한 카테고리. */
+const FILLER_CATEGORIES: CourseItemCategory[] = ['CAFE', 'WALK'];
+
 export type Slot =
   | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number; targetStartAt: Date }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
@@ -510,9 +513,17 @@ export function planCategories(input: CourseGenerationInput): Slot[] {
       // 선호도 1순위가 hardLimit에 안 맞으면 포기하지 않고, 그 안에 들어가는 카테고리가
       // 있는지 순서대로 계속 찾는다 — 짧은 카테고리 하나면 충분히 들어갈 남는 시간을
       // 첫 번째 후보가 안 맞는다는 이유만으로 통째로 날리지 않기 위해서다.
-      const chosen = remaining.find(
-        (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
-      );
+      const chosen =
+        remaining.find(
+          (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
+        ) ??
+        // 밴드 고유 카테고리가 전부 안 맞으면(예: 11~14시 밴드는 LUNCH 하나뿐인데 다음 픽스
+        // 일정 버퍼 때문에 몇 분 모자람) 카페·산책처럼 여러 밴드에서 이미 짧고 유연한
+        // 끼워넣기용으로 쓰이는 카테고리로 남는 시간을 대신 채운다 — 그렇지 않으면 몇 분
+        // 차이로 카페 한 잔 마실 여유(예: 75분)를 통째로 날리게 된다(실제로 겪은 버그).
+        FILLER_CATEGORIES.filter((c) => !usedInBand.has(c) && !band.categories.includes(c)).find(
+          (c) => cursor.getTime() + courseSlotPolicy.categoryDurationMinutes[c] * 60_000 <= hardLimit.getTime(),
+        );
       if (!chosen) break;
 
       const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
