@@ -433,25 +433,10 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
     });
     // 새로 뽑을 장소는 이 코스에 이미 들어있는 다른 장소들 근처여야 한다 — 안 그러면
     // 지역명은 같아도 실제로는 멀리 떨어진 곳이 뽑혀 이동시간 상한(45분)에 걸릴 수 있다.
-    const activeSiblings = course.items.filter((i: PrismaRow) => i.id !== oldItem.id && i.status !== 'REPLACED');
-    const anchors = activeSiblings
-      .filter((i: PrismaRow) => i.latitude !== null && i.longitude !== null)
+    const anchors = course.items
+      .filter((i: PrismaRow) => i.id !== oldItem.id && i.status !== 'REPLACED' && i.latitude !== null && i.longitude !== null)
       .map((i: PrismaRow) => ({ latitude: i.latitude as number, longitude: i.longitude as number }));
     const places = filterByProximity(rawPlaces, anchors, courseSlotPolicy.maxCandidateRadiusKm);
-
-    // 재생성 전후로 코스 흐름이 자연스럽게 이어지도록 실제 이웃 장소 이름을 넘긴다.
-    const previousPlaceName =
-      activeSiblings.filter((i: PrismaRow) => i.sequence < oldItem.sequence).at(-1)?.placeName ?? null;
-    const nextPlaceName =
-      activeSiblings.find((i: PrismaRow) => i.sequence > oldItem.sequence)?.placeName ?? null;
-    // 식사 카테고리를 재생성할 땐, 같은 코스의 다른 식사(예: 점심 재생성이면 저녁)와
-    // 메뉴가 겹치지 않게 그 장소 이름을 명시적으로 알려준다 — 이웃 장소는 식사 슬롯
-    // 사이에 카페 등이 끼어 있으면 식사가 아닐 수 있어 이것만으론 부족하다.
-    const otherMealPlaceNames = isMealCategory
-      ? activeSiblings
-          .filter((i: PrismaRow) => i.category !== constraints.category && ['BREAKFAST', 'LUNCH', 'DINNER'].includes(i.category))
-          .map((i: PrismaRow) => i.placeName as string)
-      : [];
 
     const generated = await getAiProvider().regenerateItem({
       meetingTitle: course.meeting.title,
@@ -463,8 +448,7 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
         endAt: constraints.endAt,
         sequence: oldItem.sequence,
       },
-      neighbours: { previousPlaceName, nextPlaceName },
-      otherMealPlaceNames,
+      neighbours: { previousPlaceName: null, nextPlaceName: null },
       availablePlaces: places,
       rejectedPlaceIds: [
         ...rejected.map((r: PrismaRow) => r.placeId),

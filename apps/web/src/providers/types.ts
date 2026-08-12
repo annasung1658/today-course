@@ -84,8 +84,6 @@ export interface ItemRegenerationInput {
     sequence: number;
   };
   neighbours: { previousPlaceName: string | null; nextPlaceName: string | null };
-  /** 재생성 대상이 식사 카테고리일 때, 같은 코스의 다른 식사 장소 이름 — 메뉴가 겹치지 않게 고르는 데 쓴다. */
-  otherMealPlaceNames: string[];
   availablePlaces: PlaceCandidate[];
   rejectedPlaceIds: string[];
 }
