@@ -11,6 +11,10 @@ export interface SharedCourseSummary {
     id: string;
     sequence: number;
     placeName: string;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    travelMinutesFromPrev: number;
     reason: string;
   }>;
 }
@@ -28,7 +32,16 @@ export async function getSharedCourseSummary(courseId: string): Promise<SharedCo
       items: {
         where: { status: { not: 'REPLACED' } },
         orderBy: { sequence: 'asc' },
-        select: { id: true, sequence: true, placeName: true, reason: true },
+        select: {
+          id: true,
+          sequence: true,
+          placeName: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          travelMinutesFromPrev: true,
+          reason: true,
+        },
       },
     },
   });

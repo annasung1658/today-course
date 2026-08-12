@@ -9,6 +9,7 @@ import { CourseGenerationButton, GeneratingWatcher } from '@/components/course-g
 import { MeetingHostActions } from '@/components/meeting-host-actions';
 import { CourseSummaryShare } from '@/components/course-summary-share';
 import { getSharedCourseSummary } from '@/server/course-share-service';
+import { env } from '@/lib/env';
 
 interface PageProps {
   params: Promise<{ meetingId: string }>;
@@ -75,7 +76,7 @@ export default async function MeetingDetailPage({ params }: PageProps) {
             <Link href={`/courses/${meeting.currentCourse.courseId}/voting`} className="btn-secondary mt-3">
               확정된 코스 보기
             </Link>
-            <CourseSummaryShare course={confirmedCourse} />
+            <CourseSummaryShare course={confirmedCourse} kakaoJsKey={env.KAKAO_JS_KEY ?? null} />
           </div>
         </div>
       )}
