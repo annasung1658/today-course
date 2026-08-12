@@ -210,7 +210,10 @@ export class GeminiAiProvider implements AiProvider {
             )
           : 0;
 
-      const startAt = new Date(cursor.getTime() + travel * 60_000);
+      // 이전 항목 이동시간만으로 이어붙이면 밴드 경계를 무시하고 앞당겨질 수 있다
+      // (예: 카페 다음 슬롯이 "저녁식사"인데 오후 3시에 붙어버림) — 이 슬롯이 속한
+      // 밴드 시작 시각보다 이르게는 잡지 않는다.
+      const startAt = new Date(Math.max(cursor.getTime() + travel * 60_000, entry.slot.targetStartAt.getTime()));
       items.push({
         sequence: items.length + 1,
         category: entry.slot.category,
@@ -375,7 +378,7 @@ export class GeminiAiProvider implements AiProvider {
 // ── 내부 헬퍼 (mock/ai.ts의 planCategories와 동일한 규칙) ─────────────
 
 type Slot =
-  | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number }
+  | { kind: 'PLACE'; category: CourseItemCategory; durationMinutes: number; targetStartAt: Date }
   | { kind: 'FIXED'; fixed: CourseGenerationInput['fixedSchedules'][number] };
 
 /** hour(0~23)가 속한 시간대 밴드를 찾는다. 자정 넘은 시각(0~6시)은 전날 밤 밴드의 연장으로 본다. */
@@ -408,7 +411,13 @@ function planCategories(input: CourseGenerationInput): Slot[] {
       (a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0),
     )[0]!;
 
-    base.push({ kind: 'PLACE', category: chosen, durationMinutes: courseSlotPolicy.categoryDurationMinutes[chosen] });
+    base.push({
+      kind: 'PLACE',
+      category: chosen,
+      durationMinutes: courseSlotPolicy.categoryDurationMinutes[chosen],
+      // 이 슬롯이 속한 밴드에 들어선 시각 — 실제 시각 배정 때 여기보다 앞당겨지지 않게 한다.
+      targetStartAt: new Date(cursor),
+    });
 
     // 이 밴드는 한 번만 쓰고, 밴드 끝 시각으로 점프해 다음 밴드로 넘어간다.
     const normalizedHour = hour < 7 ? hour + 24 : hour;
