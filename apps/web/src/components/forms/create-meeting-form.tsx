@@ -6,6 +6,7 @@ import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
 import { categoryLabels } from '@/lib/format';
 import { PlaceSearchInput } from '@/components/place-search-input';
+import { DateTimeStepInput } from '@/components/date-time-step-input';
 
 interface FixedScheduleDraft {
   title: string;
@@ -130,17 +131,14 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
           <label className="label" htmlFor="startAt">
             시작
           </label>
-          <input
+          <DateTimeStepInput
             id="startAt"
-            type="datetime-local"
             min={minimumDateTime}
-            step={600}
-            className="field"
             value={startAt}
-            onChange={(e) => {
-              if (!isAllowedDateTime(e.target.value, minimumDateTime)) return;
-              setStartAt(e.target.value);
-              if (endAt && endAt < e.target.value) setEndAt('');
+            onChange={(next) => {
+              if (!isAllowedDateTime(next, minimumDateTime)) return;
+              setStartAt(next);
+              if (endAt && endAt < next) setEndAt('');
             }}
             required
           />
@@ -150,15 +148,12 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
           <label className="label" htmlFor="endAt">
             종료
           </label>
-          <input
+          <DateTimeStepInput
             id="endAt"
-            type="datetime-local"
             min={startAt || minimumDateTime}
-            step={600}
-            className="field"
             value={endAt}
-            onChange={(e) => {
-              if (isAllowedDateTime(e.target.value, startAt || minimumDateTime)) setEndAt(e.target.value);
+            onChange={(next) => {
+              if (isAllowedDateTime(next, startAt || minimumDateTime)) setEndAt(next);
             }}
             required
           />
@@ -265,31 +260,25 @@ export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string |
                 ))}
               </select>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
+                <DateTimeStepInput
                   min={startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={600}
-                  className="field"
                   value={schedule.startAt}
-                  onChange={(e) => {
-                    if (!isAllowedDateTime(e.target.value, startAt || minimumDateTime)) return;
+                  onChange={(next) => {
+                    if (!isAllowedDateTime(next, startAt || minimumDateTime)) return;
                     setFixedSchedules((list) => list.map((s, i) => i === index ? {
-                      ...s, startAt: e.target.value, endAt: s.endAt && s.endAt < e.target.value ? '' : s.endAt,
+                      ...s, startAt: next, endAt: s.endAt && s.endAt < next ? '' : s.endAt,
                     } : s));
                   }}
                   required
                 />
-                <input
-                  type="datetime-local"
+                <DateTimeStepInput
                   min={schedule.startAt || startAt || minimumDateTime}
                   max={endAt || undefined}
-                  step={600}
-                  className="field"
                   value={schedule.endAt}
-                  onChange={(e) => {
-                    if (!isAllowedDateTime(e.target.value, schedule.startAt || startAt || minimumDateTime)) return;
-                    setFixedSchedules((list) => list.map((s, i) => i === index ? { ...s, endAt: e.target.value } : s));
+                  onChange={(next) => {
+                    if (!isAllowedDateTime(next, schedule.startAt || startAt || minimumDateTime)) return;
+                    setFixedSchedules((list) => list.map((s, i) => i === index ? { ...s, endAt: next } : s));
                   }}
                   required
                 />
