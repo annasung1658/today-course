@@ -259,6 +259,8 @@ export class GeminiAiProvider implements AiProvider {
 
     return this.call<{ picks: Array<{ slotIndex: number; placeId: string; reason: string }>; title: string; summary: string }>(
       '너는 모임 코스 하루 전체를 한 번에 설계하는 플래너야. ' +
+        '전달 받은 일정 시작시간과 끝나는 시간을 꼭 준수해야해. '+
+        '전달 받은 위치를 꼭 준수해야해. ' +
         '슬롯마다 주어진 후보 목록 중에서만 딱 하나씩 골라야 해(목록에 없는 placeId를 만들면 안 돼). ' +
         '슬롯 순서와 카테고리는 이미 정해져 있으니 바꾸지 마. ' +
         '하루 전체 흐름을 보고 골라 — 예를 들어 비슷한 메뉴·분위기가 연달아 겹치지 않게, ' +
