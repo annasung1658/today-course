@@ -19,6 +19,8 @@ export default async function HomePage() {
       new Date(m.responseDeadlineAt).getTime() > now,
   );
   const voting = meetings.filter((m) => m.status === 'VOTING');
+  const generating = meetings.filter((m) => m.status === 'GENERATING');
+  const generationFailed = meetings.filter((m) => m.status === 'GENERATION_FAILED');
   const upcoming = meetings.filter((m) => m.status === 'CONFIRMED');
 
   return (
@@ -49,6 +51,24 @@ export default async function HomePage() {
             {needsMyResponse.map((m) => (
               <MeetingCard key={m.id} meeting={m} />
             ))}
+          </div>
+        </section>
+      )}
+
+      {generating.length > 0 && (
+        <section>
+          <SectionHeading title="AI가 코스를 만들고 있어요" description="취향을 모아 어울리는 장소를 찾고 있어요." />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {generating.map((m) => <MeetingCard key={m.id} meeting={m} />)}
+          </div>
+        </section>
+      )}
+
+      {generationFailed.length > 0 && (
+        <section>
+          <SectionHeading title="코스 생성을 다시 확인해 주세요" description="방장이 약속방에서 코스 생성을 다시 시도할 수 있어요." />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {generationFailed.map((m) => <MeetingCard key={m.id} meeting={m} />)}
           </div>
         </section>
       )}

@@ -24,13 +24,13 @@ export function MeetingCard({ meeting, selectionMode = false, selected = false, 
   return (
     <article className={`card card-interactive group relative overflow-hidden ${selected ? 'ring-2 ring-accent-400' : ''}`}>
       {selectionMode ? (
-        <button type="button" onClick={onSelect} className="block w-full p-5 pr-24 text-left" aria-pressed={selected}>
+        <button type="button" onClick={onSelect} className="block w-full cursor-pointer p-5 pr-24 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500" aria-pressed={selected} aria-label={`${meeting.title} ${selected ? '선택 해제' : '삭제 대상으로 선택'}`}>
           <CardContents meeting={meeting} />
         </button>
       ) : (
         <Link href={href} className="block p-5 pr-24"><CardContents meeting={meeting} /></Link>
       )}
-      <div className="absolute right-4 top-4 flex flex-col items-end gap-2">
+      <div className="pointer-events-none absolute right-4 top-4 flex flex-col items-end gap-2" aria-hidden={selectionMode || undefined}>
         <StatusChip tone={toneByStatus[meeting.status] ?? 'neutral'}>{meetingStatusLabels[meeting.status] ?? meeting.status}</StatusChip>
         {selectionMode && <span className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-black ${selected ? 'border-accent-500 bg-accent-500 text-white' : 'border-ink-200 bg-white text-transparent'}`}>✓</span>}
       </div>
