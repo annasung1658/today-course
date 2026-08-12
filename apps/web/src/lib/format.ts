@@ -1,3 +1,5 @@
+import type { CourseItemCategory } from '@oneulcourse/core';
+
 /** 화면 표시용 포맷. 모두 Asia/Seoul 기준으로 보여준다. */
 const TZ = 'Asia/Seoul';
 
@@ -34,7 +36,7 @@ export function formatCurrency(won: number): string {
   return `${won.toLocaleString('ko-KR')}원`;
 }
 
-export const categoryLabels: Record<string, string> = {
+export const categoryLabels: Record<CourseItemCategory, string> = {
   BREAKFAST: '아침식사',
   CAFE: '카페',
   LUNCH: '점심',

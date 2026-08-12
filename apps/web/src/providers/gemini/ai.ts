@@ -13,8 +13,8 @@ import type {
   ItemRegenerationInput,
   PreferenceExtractionOutput,
 } from '@/providers/types';
-import { categoryLabel } from '../mock/ai';
-import { MockRouteProvider } from '../mock/place';
+import { categoryLabels } from '@/lib/format';
+import { LocalRouteProvider } from '../local/place';
 
 /**
  * Gemini 3.5 Flash-Lite 기반 실제 AI Provider.
@@ -62,7 +62,7 @@ async function callGemini<T>(params: {
 
 export class GeminiAiProvider implements AiProvider {
   readonly name = 'gemini';
-  private routes = new MockRouteProvider();
+  private routes = new LocalRouteProvider();
 
   constructor(
     private readonly apiKey: string,
@@ -217,7 +217,7 @@ export class GeminiAiProvider implements AiProvider {
       items.push({
         sequence: items.length + 1,
         category: entry.slot.category,
-        title: `${categoryLabel(entry.slot.category)} - ${place.name}`,
+        title: `${categoryLabels[entry.slot.category]} - ${place.name}`,
         placeId: place.placeId,
         placeName: place.name,
         address: place.address,
@@ -253,7 +253,7 @@ export class GeminiAiProvider implements AiProvider {
         const candidateList = accepted
           .map((p) => `  - placeId: ${p.placeId}, 이름: ${p.name}, 1인 가격: ${p.averagePricePerPerson}원, 애견동반: ${p.petFriendly ? 'O' : 'X'}`)
           .join('\n');
-        return `[슬롯 ${index}] 카테고리: ${categoryLabel(slot.category)}\n후보:\n${candidateList}`;
+        return `[슬롯 ${index}] 카테고리: ${categoryLabels[slot.category]}\n후보:\n${candidateList}`;
       })
       .join('\n\n');
 
@@ -317,7 +317,7 @@ export class GeminiAiProvider implements AiProvider {
     return {
       sequence: input.target.sequence,
       category: input.target.category,
-      title: `${categoryLabel(input.target.category)} - ${picked.place.name}`,
+      title: `${categoryLabels[input.target.category]} - ${picked.place.name}`,
       placeId: picked.place.placeId,
       placeName: picked.place.name,
       address: picked.place.address,

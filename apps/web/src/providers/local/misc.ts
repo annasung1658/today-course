@@ -9,8 +9,8 @@ import type {
 } from '@/providers/types';
 
 /** 알림은 DB Notification 레코드로만 남긴다. 실제 발송은 이후 카카오 알림톡으로 교체한다. */
-export class MockNotificationProvider implements NotificationProvider {
-  readonly name = 'mock-notification';
+export class LocalNotificationProvider implements NotificationProvider {
+  readonly name = 'local-notification';
   private readonly sink: NotificationPayload[] = [];
 
   async send(payload: NotificationPayload): Promise<void> {
@@ -27,15 +27,15 @@ export class MockNotificationProvider implements NotificationProvider {
 }
 
 /** Presigned URL 흐름만 흉내 낸다. 실제 업로드는 하지 않는다. */
-export class MockStorageProvider implements StorageProvider {
-  readonly name = 'mock-storage';
+export class LocalStorageProvider implements StorageProvider {
+  readonly name = 'local-storage';
 
   async createPresignedUpload(params: {
     userId: string;
     contentType: string;
     extension: string;
   }): Promise<PresignedUpload> {
-    const storageKey = `mock/${params.userId}/${randomUUID()}.${params.extension}`;
+    const storageKey = `local/${params.userId}/${randomUUID()}.${params.extension}`;
     return {
       uploadUrl: `/api/v1/uploads/mock?key=${encodeURIComponent(storageKey)}`,
       fileUrl: `/api/v1/uploads/mock/file?key=${encodeURIComponent(storageKey)}`,
@@ -45,7 +45,7 @@ export class MockStorageProvider implements StorageProvider {
   }
 
   async remove(): Promise<void> {
-    // Mock에서는 실제 삭제할 대상이 없다.
+    // 실제 삭제할 대상이 없다.
   }
 }
 
