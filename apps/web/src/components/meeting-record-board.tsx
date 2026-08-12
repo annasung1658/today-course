@@ -20,6 +20,7 @@ const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts }: { recordId: string; writable: boolean; closesAt: string; photos: Photo[]; posts: Post[] }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const photoSectionRef = useRef<HTMLElement>(null);
   const [caption, setCaption] = useState('');
   const [post, setPost] = useState('');
   const [comment, setComment] = useState<Record<string, string>>({});
@@ -31,6 +32,17 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => setPhotoItems(photos), [photos]);
+
+  useEffect(() => {
+    if (!editingPhotos) return;
+    const closeEditorOutside = (event: PointerEvent) => {
+      if (photoSectionRef.current?.contains(event.target as Node)) return;
+      setEditingPhotos(false);
+      setDraggedPhotoId(null);
+    };
+    document.addEventListener('pointerdown', closeEditorOutside);
+    return () => document.removeEventListener('pointerdown', closeEditorOutside);
+  }, [editingPhotos]);
 
   const movePhoto = async (targetId: string) => {
     if (!draggedPhotoId || draggedPhotoId === targetId || busy) return;
@@ -122,7 +134,7 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
       {error && <ErrorNotice message={error} />}
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:gap-6 xl:gap-8">
-      <section className="min-w-0 lg:sticky lg:top-24">
+      <section ref={photoSectionRef} className="min-w-0 lg:sticky lg:top-24">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div><h2 className="text-lg font-extrabold">함께 찍은 사진</h2><p className="mt-0.5 text-xs text-ink-400">우리만의 순간을 한눈에 모아봐요.</p></div>
           <div className="flex items-center gap-2"><span className="text-sm text-ink-400">{photoItems.length}장</span>{writable && photoItems.length > 0 && <button type="button" className={editingPhotos ? 'rounded-full bg-ink-800 px-3 py-1.5 text-xs font-bold text-white' : 'rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-bold text-ink-600 hover:border-accent-300 hover:text-accent-600'} onClick={() => setEditingPhotos((value) => !value)}>{editingPhotos ? '완료' : '사진 편집'}</button>}</div>
@@ -139,7 +151,6 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
           {photoItems.map((photo, index) => <div key={photo.id} draggable={editingPhotos && !busy} onDragStart={() => setDraggedPhotoId(photo.id)} onDragEnd={() => setDraggedPhotoId(null)} onDragOver={(event) => editingPhotos && event.preventDefault()} onDrop={() => void movePhoto(photo.id)} className={`group relative aspect-square overflow-hidden bg-ink-100 transition ${editingPhotos ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${draggedPhotoId === photo.id ? 'scale-95 opacity-50' : ''}`}>
             <button type="button" className="absolute inset-0 z-0" onClick={() => !editingPhotos && setSelected(photo)} aria-label={`${index + 1}번째 사진 크게 보기`} />
             <Image src={photo.fileUrl} alt={photo.caption ?? '약속 사진'} fill unoptimized className={`pointer-events-none object-cover transition duration-300 ${editingPhotos ? 'scale-[0.97] brightness-90' : 'group-hover:scale-105'}`} />
-            {!editingPhotos && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/45 to-transparent px-2 pb-2 pt-8 opacity-0 transition group-hover:opacity-100"><span className="text-xs font-semibold text-white">{index + 1}</span></div>}
             {editingPhotos && <><div className="pointer-events-none absolute left-2 top-2 z-20 flex h-7 min-w-7 items-center justify-center rounded-full bg-black/55 px-2 text-xs font-bold text-white backdrop-blur">{index + 1}</div><button type="button" onClick={(event) => { event.stopPropagation(); void deletePhoto(photo); }} className="absolute right-2 top-2 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-lg font-medium text-red-500 shadow-md transition hover:scale-105 hover:bg-red-50" aria-label="사진 삭제">×</button></>}
           </div>)}
         </div>
