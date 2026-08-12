@@ -3,6 +3,7 @@ import { apiError } from '@/lib/api/errors';
 import { notify } from '@/server/notification-service';
 import type { PrismaRow } from '@/server/prisma-types';
 import { meetingRecordWindow } from '@/lib/meeting-lifecycle';
+import { getStorageProvider } from '@/providers';
 
 /** 약속 후 기록. 작성자와 방장 권한을 구분한다. */
 
@@ -120,6 +121,43 @@ export async function addPhoto(
       caption: input.caption,
     },
   });
+}
+
+/** 사진 순서는 기록방 참여자라면 편집할 수 있다. createdAt을 정렬 키로 재사용해 별도 마이그레이션 없이 유지한다. */
+export async function reorderPhotos(recordId: string, userId: string, photoIds: string[]) {
+  const record = await prisma.meetingRecord.findUnique({
+    where: { id: recordId },
+    include: { photos: { select: { id: true } } },
+  });
+  if (!record) throw apiError('RESOURCE_NOT_FOUND');
+  await assertRecordAccess(record.meetingId, userId, true);
+
+  const existingIds = record.photos.map((photo) => photo.id);
+  if (photoIds.length !== existingIds.length || new Set(photoIds).size !== photoIds.length || photoIds.some((id) => !existingIds.includes(id))) {
+    throw apiError('VALIDATION_ERROR', { photoIds: '현재 사진 전체를 올바른 순서로 보내주세요.' });
+  }
+
+  const base = new Date();
+  await prisma.$transaction(photoIds.map((id, index) => prisma.recordPhoto.update({
+    where: { id },
+    data: { createdAt: new Date(base.getTime() + index * 1000) },
+  })));
+  return { photoIds };
+}
+
+/** 사진은 올린 사람 또는 방장이 삭제할 수 있으며 저장소 원본도 함께 정리한다. */
+export async function removePhoto(photoId: string, userId: string) {
+  const photo = await prisma.recordPhoto.findUnique({
+    where: { id: photoId },
+    include: { record: { include: { meeting: { select: { hostUserId: true } } } } },
+  });
+  if (!photo) throw apiError('RESOURCE_NOT_FOUND');
+  await assertRecordAccess(photo.record.meetingId, userId, true);
+  if (photo.authorUserId !== userId && photo.record.meeting.hostUserId !== userId) throw apiError('FORBIDDEN');
+
+  await prisma.recordPhoto.delete({ where: { id: photoId } });
+  if (photo.storageKey) await getStorageProvider().remove(photo.storageKey).catch(() => undefined);
+  return { id: photoId, deleted: true };
 }
 
 export async function addPost(
