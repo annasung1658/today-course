@@ -181,20 +181,35 @@ export class GeminiAiProvider implements AiProvider {
     for (let index = 0; index < plan.length; index += 1) {
       const fixed = resolvedFixed.get(index);
       if (fixed) {
+        const prevFixed = items[items.length - 1];
+        const fixedTravel =
+          prevFixed &&
+          prevFixed.latitude !== null &&
+          prevFixed.longitude !== null &&
+          fixed.fixed.latitude !== null &&
+          fixed.fixed.longitude !== null
+            ? await this.routes.estimateMinutes(
+                { latitude: prevFixed.latitude, longitude: prevFixed.longitude },
+                { latitude: fixed.fixed.latitude, longitude: fixed.fixed.longitude },
+              )
+            : items.length === 0
+              ? 0
+              : 10;
+
         items.push({
           sequence: items.length + 1,
           category: fixed.fixed.category,
           title: fixed.fixed.title,
-          placeId: null,
+          placeId: fixed.fixed.placeId,
           placeName: fixed.fixed.placeName,
-          address: null,
-          latitude: null,
-          longitude: null,
+          address: fixed.fixed.address,
+          latitude: fixed.fixed.latitude,
+          longitude: fixed.fixed.longitude,
           startAt: fixed.fixed.startAt,
           endAt: fixed.fixed.endAt,
           estimatedPricePerPerson: 0,
           reason: '방장이 미리 정한 일정이라 그대로 넣었어요.',
-          travelMinutesFromPrev: items.length === 0 ? 0 : 10,
+          travelMinutesFromPrev: fixedTravel,
           fixedScheduleId: fixed.fixed.id,
         });
         cursor = new Date(fixed.fixed.endAt);

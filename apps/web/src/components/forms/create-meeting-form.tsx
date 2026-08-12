@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation';
 import { apiFetch, ApiClientError, newIdempotencyKey } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
 import { categoryLabels } from '@/lib/format';
+import { PlaceSearchInput } from '@/components/place-search-input';
 
 interface FixedScheduleDraft {
   title: string;
   startAt: string;
   endAt: string;
   placeName: string;
+  address: string | null;
+  placeId: string | null;
+  latitude: number | null;
+  longitude: number | null;
   category: string;
 }
 
@@ -44,7 +49,7 @@ function isAllowedDateTime(value: string, minimum: string) {
 }
 
 /** 약속 만들기. 픽스 일정은 AI가 바꿀 수 없다는 점을 화면에서 분명히 말한다. */
-export function CreateMeetingForm() {
+export function CreateMeetingForm({ kakaoJsKey = null }: { kakaoJsKey?: string | null }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState('');
@@ -84,6 +89,10 @@ export function CreateMeetingForm() {
             startAt: new Date(f.startAt).toISOString(),
             endAt: new Date(f.endAt).toISOString(),
             placeName: f.placeName,
+            address: f.address ?? undefined,
+            placeId: f.placeId ?? undefined,
+            latitude: f.latitude ?? undefined,
+            longitude: f.longitude ?? undefined,
             category: f.category,
           })),
         }),
@@ -219,17 +228,27 @@ export function CreateMeetingForm() {
                 }
                 required
               />
-              <input
-                className="field"
-                placeholder="장소 이름"
+              <PlaceSearchInput
+                apiKey={kakaoJsKey}
                 value={schedule.placeName}
-                onChange={(e) =>
+                onSelect={(place) =>
                   setFixedSchedules((list) =>
-                    list.map((s, i) => (i === index ? { ...s, placeName: e.target.value } : s)),
+                    list.map((s, i) =>
+                      i === index
+                        ? {
+                            ...s,
+                            placeName: place.placeName,
+                            address: place.address,
+                            placeId: place.placeId,
+                            latitude: place.latitude,
+                            longitude: place.longitude,
+                          }
+                        : s,
+                    ),
                   )
                 }
-                required
               />
+              {kakaoJsKey && schedule.address && <p className="text-xs text-ink-500">{schedule.address}</p>}
               <select
                 className="field"
                 value={schedule.category}
@@ -290,7 +309,17 @@ export function CreateMeetingForm() {
             onClick={() =>
               setFixedSchedules((list) => [
                 ...list,
-                { title: '', startAt: '', endAt: '', placeName: '', category: 'ACTIVITY' },
+                {
+                  title: '',
+                  startAt: '',
+                  endAt: '',
+                  placeName: '',
+                  address: null,
+                  placeId: null,
+                  latitude: null,
+                  longitude: null,
+                  category: 'ACTIVITY',
+                },
               ])
             }
           >
