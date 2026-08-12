@@ -438,15 +438,22 @@ function planCategories(input: CourseGenerationInput): Slot[] {
     const band = findTimeBand(hour);
     const normalizedHour = hour < 7 ? hour + 24 : hour;
     const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
-    // 이번에 채울 수 있는 실질적 한계 시각 — 밴드 끝, 모임 종료, 다음 픽스 일정 시작 중 가장 이른 시각.
-    const limitTimes = [bandEndAt.getTime(), end.getTime()];
-    if (nextFixed) limitTimes.push(nextFixed.startAt.getTime());
-    const fillUntil = new Date(Math.min(...limitTimes));
+    // 다음 경계(밴드 끝/모임 종료/다음 픽스 일정 시작 중 가장 이른 시각) — 커서는 결국 여기까지 진행한다.
+    const boundaryTimes = [bandEndAt.getTime(), end.getTime()];
+    if (nextFixed) boundaryTimes.push(nextFixed.startAt.getTime());
+    const boundary = new Date(Math.min(...boundaryTimes));
+    // 다음 경계가 픽스 일정 시작이면, 실제 이동시간이 붙을 걸 감안해 그 직전에 여유를 남기고
+    // 그 여유 구간 안으로는 새 슬롯을 안 채운다 — 안 그러면 이동시간 때문에 슬롯이 픽스
+    // 일정 위로 밀려서 겹침 검증에 항상 실패한다(실제로 겪은 버그).
+    const fillLimit =
+      nextFixed && boundary.getTime() === nextFixed.startAt.getTime()
+        ? new Date(boundary.getTime() - courseSlotPolicy.preFixedBufferMinutes * 60_000)
+        : boundary;
 
     const usedInBand = usedByBand.get(band.startHour) ?? new Set<CourseItemCategory>();
     usedByBand.set(band.startHour, usedInBand);
 
-    while (cursor.getTime() < fillUntil.getTime() && placeCount < maxItems) {
+    while (cursor.getTime() < fillLimit.getTime() && placeCount < maxItems) {
       const remaining = band.categories.filter((c) => !usedInBand.has(c));
       if (remaining.length === 0) break;
 
@@ -455,8 +462,8 @@ function planCategories(input: CourseGenerationInput): Slot[] {
       const chosen = remaining.sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0))[0]!;
       const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
       const slotEnd = new Date(cursor.getTime() + durationMinutes * 60_000);
-      // 이 슬롯을 넣으면 밴드 끝/모임 종료/다음 픽스 일정 시작을 넘겨버리면 여기서 멈춘다.
-      if (slotEnd.getTime() > fillUntil.getTime()) break;
+      // 이 슬롯을 넣으면 이동시간 여유까지 포함한 한계를 넘겨버리면 여기서 멈춘다.
+      if (slotEnd.getTime() > fillLimit.getTime()) break;
 
       base.push({
         kind: 'PLACE',
@@ -470,9 +477,10 @@ function planCategories(input: CourseGenerationInput): Slot[] {
       cursor = slotEnd;
     }
 
-    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, 다음 슬롯이 안 맞음 등)
-    // 다음 경계(밴드 끝 또는 다음 픽스 일정 시작 중 이른 쪽)로 커서를 점프한다.
-    if (cursor.getTime() < fillUntil.getTime()) cursor = fillUntil;
+    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, 이동시간 여유 확보 등) 다음
+    // 경계(밴드 끝 또는 다음 픽스 일정 시작 중 이른 쪽)로 커서를 점프한다. 여유 구간이
+    // 남아있어도 boundary까지 그대로 진행해야 다음 루프에서 픽스 일정이 바로 끼워진다.
+    if (cursor.getTime() < boundary.getTime()) cursor = boundary;
   }
 
   // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.

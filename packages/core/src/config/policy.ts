@@ -112,6 +112,14 @@ export const courseSlotPolicy = {
     SHOPPING: 50,
     BAR: 90,
   } as Record<CourseItemCategory, number>,
+  /**
+   * 픽스 일정 시작 직전에 남겨두는 최소 이동시간 여유(분).
+   * 슬롯 배치는 이동시간을 모르는 채로(0분 가정) 계획을 짜고, 실제 이동시간은 장소가
+   * 정해진 뒤에야 계산된다. 여유 없이 픽스 일정 시작 시각까지 딱 맞춰 계획하면, 실제
+   * 이동시간이 조금만 있어도 바로 앞 슬롯이 픽스 일정 위로 밀려서 겹침 검증에 항상
+   * 실패한다(실제로 겪은 버그) — 그래서 계획 단계에서부터 이 여유를 미리 빼둔다.
+   */
+  preFixedBufferMinutes: 15,
 } as const;
 
 export const invitationPolicy = {
