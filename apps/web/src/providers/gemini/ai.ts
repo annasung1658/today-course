@@ -397,24 +397,56 @@ function findTimeBand(hour: number): TimeBand {
  * 일정에 설명되지 않는 빈 구간이 생긴다. 밴드의 카테고리를 다 썼거나(같은 밴드에서
  * 카테고리를 반복하지는 않는다) 남은 시간이 부족해지면 밴드 끝 시각으로 커서를 점프해
  * 다음 밴드로 넘어간다.
+ *
+ * 픽스 일정은 시작 시각에 도달하는 즉시 그 자리에 끼워 넣고, 일반 슬롯은 픽스 일정의
+ * 시작 시각을 절대 넘기지 않는다 — 그렇지 않으면 일반 슬롯이 픽스 일정 시간대를 모른 채
+ * 배치돼 두 항목의 시간이 겹치는 채로 저장되고, 겹침 검증(validateItemTimeline)에서
+ * 매번 재시도만 반복하다 결국 생성이 실패한다(실제로 겪은 버그).
  */
 function planCategories(input: CourseGenerationInput): Slot[] {
   const activityTally = new Map(input.aggregated.preferredActivities.map((a) => [a.tag, a.count]));
+  const fixedSorted = [...input.fixedSchedules].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  // 밴드가 픽스 일정에 끊겨도(중간에 다른 걸 끼우고 이어져도) 같은 밴드로 취급해
+  // 카테고리를 반복하지 않는다. 밴드 시작 시각(startHour)으로 구분한다.
+  const usedByBand = new Map<number, Set<CourseItemCategory>>();
 
   const base: Slot[] = [];
   let cursor = new Date(input.meeting.scheduledStartAt);
   const end = input.meeting.scheduledEndAt;
   const maxItems = scaledMaxCourseItems((end.getTime() - cursor.getTime()) / 60_000);
+  let placeCount = 0;
+  let fixedIndex = 0;
 
-  while (cursor.getTime() < end.getTime() && base.length < maxItems) {
+  while (cursor.getTime() < end.getTime()) {
+    const nextFixed = fixedSorted[fixedIndex];
+
+    if (nextFixed && cursor.getTime() >= nextFixed.startAt.getTime()) {
+      base.push({ kind: 'FIXED', fixed: nextFixed });
+      cursor = new Date(nextFixed.endAt);
+      fixedIndex += 1;
+      continue;
+    }
+
+    if (placeCount >= maxItems) {
+      // 더 넣을 수 있는 일반 슬롯은 없지만, 남은 픽스 일정은 반드시 넣어야 하니
+      // 다음 픽스 일정 시작 시각(없으면 종료 시각)까지 커서만 점프시킨다.
+      cursor = nextFixed ? new Date(nextFixed.startAt) : new Date(end);
+      continue;
+    }
+
     const { hour, minute } = koreaTimeParts(cursor);
     const band = findTimeBand(hour);
     const normalizedHour = hour < 7 ? hour + 24 : hour;
     const bandEndAt = new Date(cursor.getTime() + ((band.endHour - normalizedHour) * 60 - minute) * 60_000);
-    const fillUntil = new Date(Math.min(bandEndAt.getTime(), end.getTime()));
+    // 이번에 채울 수 있는 실질적 한계 시각 — 밴드 끝, 모임 종료, 다음 픽스 일정 시작 중 가장 이른 시각.
+    const limitTimes = [bandEndAt.getTime(), end.getTime()];
+    if (nextFixed) limitTimes.push(nextFixed.startAt.getTime());
+    const fillUntil = new Date(Math.min(...limitTimes));
 
-    const usedInBand = new Set<CourseItemCategory>();
-    while (cursor.getTime() < fillUntil.getTime() && base.length < maxItems) {
+    const usedInBand = usedByBand.get(band.startHour) ?? new Set<CourseItemCategory>();
+    usedByBand.set(band.startHour, usedInBand);
+
+    while (cursor.getTime() < fillUntil.getTime() && placeCount < maxItems) {
       const remaining = band.categories.filter((c) => !usedInBand.has(c));
       if (remaining.length === 0) break;
 
@@ -422,6 +454,9 @@ function planCategories(input: CourseGenerationInput): Slot[] {
       // sort가 안정 정렬이라 밴드에 적힌 순서상 첫 번째가 그대로 남는다.
       const chosen = remaining.sort((a, b) => (activityTally.get(b) ?? 0) - (activityTally.get(a) ?? 0))[0]!;
       const durationMinutes = courseSlotPolicy.categoryDurationMinutes[chosen];
+      const slotEnd = new Date(cursor.getTime() + durationMinutes * 60_000);
+      // 이 슬롯을 넣으면 밴드 끝/모임 종료/다음 픽스 일정 시작을 넘겨버리면 여기서 멈춘다.
+      if (slotEnd.getTime() > fillUntil.getTime()) break;
 
       base.push({
         kind: 'PLACE',
@@ -431,17 +466,20 @@ function planCategories(input: CourseGenerationInput): Slot[] {
         targetStartAt: new Date(cursor),
       });
       usedInBand.add(chosen);
-      cursor = new Date(cursor.getTime() + durationMinutes * 60_000);
+      placeCount += 1;
+      cursor = slotEnd;
     }
 
-    // 밴드 카테고리를 다 썼는데도 밴드 시간이 남았으면 다음 밴드로 넘어가기 위해
-    // 밴드 끝 시각으로 커서를 점프한다(이미 밴드 끝을 넘겼으면 그대로 둔다).
-    if (cursor.getTime() < bandEndAt.getTime()) cursor = bandEndAt;
+    // 더 못 채우고 남은 시간이 있으면(밴드 카테고리 소진, 다음 슬롯이 안 맞음 등)
+    // 다음 경계(밴드 끝 또는 다음 픽스 일정 시작 중 이른 쪽)로 커서를 점프한다.
+    if (cursor.getTime() < fillUntil.getTime()) cursor = fillUntil;
   }
 
-  const fixedSlots: Slot[] = input.fixedSchedules.map((fixed) => ({ kind: 'FIXED', fixed }));
-  return [...base, ...fixedSlots].sort((a, b) => {
-    if (a.kind === 'FIXED' && b.kind === 'FIXED') return a.fixed.startAt.getTime() - b.fixed.startAt.getTime();
-    return 0;
-  });
+  // 위 루프가 모임 종료 시각에서 멈췄더라도, 아직 안 끼운 픽스 일정이 남아있으면 마저 추가한다.
+  while (fixedIndex < fixedSorted.length) {
+    base.push({ kind: 'FIXED', fixed: fixedSorted[fixedIndex]! });
+    fixedIndex += 1;
+  }
+
+  return base;
 }
