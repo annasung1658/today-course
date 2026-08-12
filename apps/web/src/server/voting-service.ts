@@ -411,15 +411,18 @@ export async function runItemRegeneration(itemId: string): Promise<void> {
 
     const rejected = await prisma.rejectedPlace.findMany({ where: { meetingId: course.meetingId } });
     const aggregated = await loadAggregatedPreferences(course.meetingId);
-    // 식사 카테고리는 참가자가 가장 많이 답한 음식 키워드로, 그 외 카테고리(체험·쇼핑 등)는
-    // 구체적으로 말한 장소 키워드("도자기 공방", "잠실 롯데백화점" 등)로 검색해야 검색
-    // 단계에서부터 반영된다 — 그렇지 않으면 후보군 자체에 안 걸려서 AI가 관계없는 곳 중에서
-    // 고를 수밖에 없다.
+    // 식사 카테고리는 참가자가 가장 많이 답한 음식 키워드로 검색한다.
+    // activityKeywords(예: "소품샵", "도자기 공방")는 카테고리 정보 없이 저장되는 값이라,
+    // 실제로 그 키워드가 어떤 카테고리를 가리키는지 알 수 없다 — ACTIVITY/SHOPPING처럼
+    // 참가자가 구체적 장소명을 직접 말하는 게 흔한 카테고리에만 한정해서 쓴다.
+    // BAR 같은 카테고리에까지 그대로 적용하면 "이자카야를 다시 뽑았는데 소품샵이 나옴"처럼
+    // 완전히 관계없는 곳이 검색된다 — 실제로 겪은 버그다.
     const isMealCategory =
       constraints.category === 'BREAKFAST' || constraints.category === 'LUNCH' || constraints.category === 'DINNER';
+    const isKeywordCategory = constraints.category === 'ACTIVITY' || constraints.category === 'SHOPPING';
     const topFood = aggregated.preferredFoods[0]?.tag;
     const topActivityKeyword = aggregated.activityKeywords[0];
-    const regenerationQuery = isMealCategory ? topFood : topActivityKeyword;
+    const regenerationQuery = isMealCategory ? topFood : isKeywordCategory ? topActivityKeyword : undefined;
     const places = await getPlaceProvider().search({
       area: course.meeting.areaName,
       category: constraints.category,
