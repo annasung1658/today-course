@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { ErrorNotice } from '@/components/ui';
+import { RecordStoryShare } from '@/components/record-story-share';
 
 type Photo = { id: string; fileUrl: string; caption: string | null; author: { nickname: string }; createdAt: string };
 type Comment = { id: string; content: string; author: { nickname: string }; createdAt: string };
@@ -17,7 +18,7 @@ const ALLOWED_IMAGE_TYPES: Record<string, 'jpg' | 'jpeg' | 'png' | 'webp'> = {
 };
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
-export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts }: { recordId: string; writable: boolean; closesAt: string; photos: Photo[]; posts: Post[] }) {
+export function MeetingRecordBoard({ recordId, title, dateLabel, writable, closesAt, photos, posts }: { recordId: string; title: string; dateLabel: string; writable: boolean; closesAt: string; photos: Photo[]; posts: Post[] }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const photoSectionRef = useRef<HTMLElement>(null);
@@ -132,6 +133,7 @@ export function MeetingRecordBoard({ recordId, writable, closesAt, photos, posts
         {writable ? `${new Date(closesAt).toLocaleString('ko-KR')}까지 사진과 글을 함께 남길 수 있어요.` : '기록 작성 기간이 끝났어요. 함께 남긴 추억은 계속 볼 수 있어요.'}
       </div>
       {error && <ErrorNotice message={error} />}
+      <div className="flex justify-end"><RecordStoryShare title={title} dateLabel={dateLabel} photos={photoItems} posts={posts} /></div>
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:gap-6 xl:gap-8">
       <section ref={photoSectionRef} className="min-w-0 lg:sticky lg:top-24">
