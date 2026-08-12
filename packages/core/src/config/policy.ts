@@ -120,6 +120,24 @@ export const courseSlotPolicy = {
     BAR: 90,
   } as Record<CourseItemCategory, number>,
   /**
+   * 남는 시간이 평균 체류시간보다 짧을 때 그 카테고리를 포기하지 않고 줄여서라도 쓸 수
+   * 있는 최소 시간(분). 예를 들어 11~14시(LUNCH 전용) 밴드에 12:30에 들어왔는데 다음
+   * 픽스 일정 버퍼 때문에 75분만 남으면, 평균(80분)보다는 짧아도 이 최소값(50분)만
+   * 넘으면 다른 카테고리로 바꾸지 않고 그 시간만큼만 LUNCH로 채운다 — 점심시간에
+   * 뜬금없이 카페가 끼어드는 것보다 짧게라도 점심을 먹는 쪽이 자연스럽다.
+   */
+  categoryMinDurationMinutes: {
+    BREAKFAST: 40,
+    CAFE: 30,
+    LUNCH: 50,
+    DINNER: 60,
+    WALK: 30,
+    EXHIBITION: 40,
+    ACTIVITY: 40,
+    SHOPPING: 30,
+    BAR: 45,
+  } as Record<CourseItemCategory, number>,
+  /**
    * 픽스 일정 시작 직전에 남겨두는 최소 이동시간 여유(분).
    * 슬롯 배치는 이동시간을 모르는 채로(0분 가정) 계획을 짜고, 실제 이동시간은 장소가
    * 정해진 뒤에야 계산된다. 여유 없이 픽스 일정 시작 시각까지 딱 맞춰 계획하면, 실제
