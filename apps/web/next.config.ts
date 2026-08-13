@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'img1.kakaocdn.net' },
     ],
   },
-  experimental: { typedRoutes: false },
+  typedRoutes: false,
 };
 
 export default nextConfig;
