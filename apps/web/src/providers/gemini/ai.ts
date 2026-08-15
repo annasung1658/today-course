@@ -219,17 +219,39 @@ export class GeminiAiProvider implements AiProvider {
       const entry = flexibleSlots.find((s) => s.index === index);
       if (!entry) continue;
       const pick = pickByIndex.get(index);
-      const place = (pick && entry.accepted.find((p) => p.placeId === pick.placeId)) ?? entry.accepted[0]!;
-      const reason = pick?.reason ?? `${input.meeting.areaName}에서 조건에 맞는 곳이에요.`;
+      let place = (pick && entry.accepted.find((p) => p.placeId === pick.placeId)) ?? entry.accepted[0]!;
+      let reason = pick?.reason ?? `${input.meeting.areaName}에서 조건에 맞는 곳이에요.`;
 
       const prev = items[items.length - 1];
-      const travel =
+      let travel =
         prev && prev.latitude !== null && prev.longitude !== null
           ? await this.routes.estimateMinutes(
               { latitude: prev.latitude, longitude: prev.longitude },
               { latitude: place.latitude, longitude: place.longitude },
             )
           : 0;
+
+      // AI는 좌표를 모르고 이름·가격만 보고 고르기 때문에, 고른 곳이 이전 장소와
+      // 이동시간 상한(courseSlotPolicy.maxTravelMinutesFromPrev)보다 멀 수 있다.
+      // 그 상태로는 스키마 검증에서 매번 똑같이 실패한다(후보 자체가 안 바뀌니 재시도해도
+      // 소용없다 — 실제로 겪은 버그) — 같은 후보군 중 이전 장소에서 가장 가까운 곳으로
+      // 대신 골라 구조적으로 재시도 없이 상한을 지키게 한다.
+      if (prev && prev.latitude !== null && prev.longitude !== null && travel > courseSlotPolicy.maxTravelMinutesFromPrev) {
+        const prevPoint = { latitude: prev.latitude, longitude: prev.longitude };
+        const ranked = await Promise.all(
+          entry.accepted.map(async (candidate) => ({
+            candidate,
+            travel: await this.routes.estimateMinutes(prevPoint, { latitude: candidate.latitude, longitude: candidate.longitude }),
+          })),
+        );
+        ranked.sort((a, b) => a.travel - b.travel);
+        const closest = ranked[0];
+        if (closest && closest.travel < travel) {
+          place = closest.candidate;
+          travel = closest.travel;
+          reason = `${input.meeting.areaName}에서 이전 장소와 가까워 이동이 편한 곳이에요.`;
+        }
+      }
 
       // 이전 항목 이동시간만으로 이어붙이면 밴드 경계를 무시하고 앞당겨질 수 있다
       // (예: 카페 다음 슬롯이 "저녁식사"인데 오후 3시에 붙어버림) — 이 슬롯이 속한

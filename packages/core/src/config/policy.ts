@@ -91,7 +91,17 @@ export interface TimeBand {
   categories: CourseItemCategory[];
 }
 
+/**
+ * 항목 간 이동시간 상한(분). generatedCourseItemSchema의 travelMinutesFromPrev 검증과
+ * 코스 생성 로직(preFixedBufferMinutes, 근접 후보 선택)이 모두 이 값 하나를 참조한다 —
+ * 여러 곳에 45를 따로 박아두면 한쪽만 바뀌었을 때 조용히 어긋난다(실제로 겪은 버그:
+ * "경기도 광주"처럼 넓은 지역에서 AI가 고른 곳끼리 45분 넘게 떨어져 있어도 코드가
+ * 더 가까운 대안으로 바꿔주지 않아 스키마 검증에서 매번 똑같이 실패했다).
+ */
+const maxTravelMinutesFromPrev = 45;
+
 export const courseSlotPolicy = {
+  maxTravelMinutesFromPrev,
   /**
    * 마지막 밴드를 23시에서 끊는 이유: 실제 영업시간이 확인되지 않은 장소(카카오 데이터
    * 대부분)는 안전하게 09:00~23:00 영업으로만 가정하고 그 밖은 "확인 불가"로 제외한다
@@ -129,7 +139,7 @@ export const courseSlotPolicy = {
    * 작으면 그 상한에 가까운 실제 이동시간에서 다시 같은 겹침 실패가 재발할 수 있으므로,
    * 그 상한과 동일하게 맞춰 어떤 경우에도 침범이 생기지 않게 한다.
    */
-  preFixedBufferMinutes: 45,
+  preFixedBufferMinutes: maxTravelMinutesFromPrev,
   /**
    * 장소 후보를 AI에게 보여주기 전에, 기준점 무게중심에서 이 반경(km) 밖의 후보는 미리
    * 걸러낸다. AI는 후보를 고를 때 좌표를 전혀 모르고 이름·가격만 보고 고르기 때문에,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { meetingPolicy } from '@oneulcourse/core';
+import { meetingPolicy, courseSlotPolicy } from '@oneulcourse/core';
 
 /**
  * 입력 검증과 AI 출력 검증 스키마.
@@ -35,7 +35,7 @@ export const generatedCourseItemSchema = z.object({
   endAt: isoDate,
   estimatedPricePerPerson: z.number().int().min(0).max(1_000_000),
   reason: z.string().min(1).max(500),
-  travelMinutesFromPrev: z.number().int().min(0).max(45),
+  travelMinutesFromPrev: z.number().int().min(0).max(courseSlotPolicy.maxTravelMinutesFromPrev),
   fixedScheduleId: z.string().nullable(),
 });
 
